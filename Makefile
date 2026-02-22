@@ -16,9 +16,11 @@ DTB              := $(LOCAL_KERNEL_DIR)/arch/arm/boot/dts/vita1000.dtb
 
 .PHONY: sync build pull push boot deploy dtb help watch
 
+BRANCH ?= vita-port
+
 help:
 	@echo "Targets:"
-	@echo "  sync    — push git + .config to build VM"
+	@echo "  sync    — fetch + reset build VM to BRANCH (default: vita-port)"
 	@echo "  build   — compile zImage on build VM"
 	@echo "  dtb     — compile device tree on build VM"
 	@echo "  pull    — fetch built zImage + DTB from build VM"
@@ -27,13 +29,11 @@ help:
 	@echo "  watch   — watch an in-progress boot"
 	@echo "  deploy  — full pipeline: sync → build → pull → push → boot"
 
-# ------- Sync: git push + pull + config -------
+# ------- Sync: fetch + reset to BRANCH + config -------
 
 sync:
-	@echo "==> Pushing vita-port to origin..."
-	@cd $(LOCAL_KERNEL_DIR) && git push origin vita-port
-	@echo "==> Pulling on $(BUILD_HOST)..."
-	@ssh $(BUILD_HOST) 'cd $(REMOTE_KERNEL_DIR) && git fetch origin && git reset --hard origin/vita-port'
+	@echo "==> Syncing $(BUILD_HOST) to origin/$(BRANCH)..."
+	@ssh $(BUILD_HOST) 'cd $(REMOTE_KERNEL_DIR) && git fetch origin $(BRANCH) && git reset --hard origin/$(BRANCH)'
 	@echo "==> Syncing .config..."
 	@scp -q kernel.config $(BUILD_HOST):$(REMOTE_KERNEL_DIR)/.config
 	@echo "==> Sync complete."

@@ -35,9 +35,9 @@ stage_elapsed() {
 #   2: waiting for zImage load          —  5s
 #   3: waiting for jump to linux        — 25s (loading 15MB zImage from SD)
 #   4: waiting for kernel boot msg      —  5s (decompression)
-#   5: waiting for userspace init       — 10s (kernel init + drivers)
-#   6: waiting for login prompt         — 10s (userspace services)
-stage_timeouts=(15 10 5 25 5 10 10)
+#   5: waiting for userspace init       — 20s (kernel init + drivers)
+#   6: waiting for login prompt         — 15s (userspace services)
+stage_timeouts=(15 10 5 25 5 20 15)
 
 seen=0
 

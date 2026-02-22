@@ -40,7 +40,7 @@ See [HARDWARE.md](HARDWARE.md) for peripheral addresses, register maps, and pino
 The `Makefile` orchestrates the full workflow from macOS. Run `make help` for all targets.
 
 - `make deploy` — full pipeline: sync → build → pull → push → boot
-- `make sync` — push git commits + copy `.config` to periscope
+- `make sync` — fetch + reset periscope to `BRANCH` (default `vita-port`), copy `.config`
 - `make build` — compile zImage on periscope via SSH
 - `make dtb` — compile device tree on periscope via SSH
 - `make pull` — fetch built zImage + DTB from periscope
@@ -51,16 +51,13 @@ The `Makefile` orchestrates the full workflow from macOS. Run `make help` for al
 ### Agent workflow (edit → build → test)
 
 1. Edit files in `linux_vita/` (drivers, DTS, etc.)
-2. **Commit changes**: `cd linux_vita && git add <files> && git commit -m "..."`
+2. **Commit and push**: `cd linux_vita && git add <files> && git commit -m "..." && git push origin vita-port`
    - Always stage specific files — never `git add -A` (macOS case-insensitive FS creates spurious diffs)
    - Run `fix_case_sensitivity.sh` once after cloning to hide the known bad files
-3. `make sync` — pushes to GitHub, pulls on periscope, copies `.config`
-4. `make build` — if error: read output, fix, go to step 1
-5. `make pull` — fetch built binaries
-6. `make push` — upload to Vita
-7. `make boot` — launch and monitor via serial
-
-Or just `make deploy` for steps 3-7 in one command.
+3. `make deploy` — syncs periscope, builds, pulls binaries, uploads to Vita, boots
+   - Or use `make sync BRANCH=my-branch` to sync a different branch
+4. If build fails: read error output, fix, commit, push, `make deploy` again
+5. After boot: use `./vita_cmd.sh "command"` to run commands on the Vita
 
 ### Kernel config
 
