@@ -1,6 +1,4 @@
 # Subrepos (have their own git history)
-linux_vita/
-vita-baremetal-linux-loader/
 refs/
 
 # Built artifacts
