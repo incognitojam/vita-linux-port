@@ -2,11 +2,12 @@
 
 ## Date: 2026-02-22
 
-## Status: LINUX BOOTS — eMMC PARTITIONS MOUNTED
+## Status: LINUX BOOTS — eMMC PARTITIONS MOUNTED — REBOOT WORKS
 
 Linux 6.7.0-rc5 boots to a Buildroot shell on the PlayStation Vita with all 4 Cortex-A9 cores,
 framebuffer, touchscreen, buttons, GPIO LEDs, RTC, serial console, and SDHCI storage (eMMC readable).
 All VitaOS partitions on the eMMC are mountable and readable from Linux.
+`reboot` performs a clean hardware cold reset back to VitaOS with memory card intact.
 
 ## The L2 Cache Fix
 
@@ -334,6 +335,70 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - `etc/fstab` — standard mounts + Vita eMMC partitions (ro, noauto)
 - `etc/init.d/S05vita` — creates `/dev/vita/*` symlinks to eMMC partitions
 - `mnt/{os0,vs0,sa0,tm0,vd0,ud0,pd0,ur0}/` — mountpoint directories
+
+## Reboot / Power Management (2026-02-22) — SOLVED
+
+### Solution
+
+Cold reset via direct SPI command `0x0801` to Ernie. Before issuing the reset,
+power off the memory card (MSIF, cmd `0x89B`) and game card slot (cmd `0x888`)
+so VitaOS finds them in a clean state on the next boot.
+
+Implementation: reboot notifier in `vita-syscon.c` with priority 255.
+
+### Key Discovery: Raw Ernie Commands
+
+The TrustZone Secure Monitor (SMC 0x11A) is the normal path for power commands,
+but it can't function after Linux reconfigures the GIC and SPI controller.
+Analysis of the Monitor's handler (henkaku wiki `SceSyscon#sceSysconSetPowerModeForDriver`)
+revealed it sends **different raw SPI commands** than the VitaOS kernel-level
+abstraction (cmd 0x0C). The raw Ernie commands are:
+
+| Command | Description | Wire format `{cmd_lo, cmd_hi, args_size, args}` | Status |
+|---------|-------------|--------------------------------------------------|--------|
+| 0x0801 | Cold reset | `{0x01, 0x08, 0x01, 0x00}` | **Works** |
+| 0x00C0 | Power off/suspend/soft-reset | `{0xC0, 0x00, 0x05, type, ~mode...}` | Rejected (0x3B) |
+| 0x00C1 | Ext boot / update mode | `{0xC1, 0x00, 0x02, 0x00}` | Untested |
+| 0x00C2 | Hibernate | `{0xC2, 0x00, 0x02, 0x5A}` | Untested |
+
+The VitaOS-level command 0x0C is rejected with result 0x3F — this is a
+higher-level abstraction that goes through `ksceSysconCmdExec` with flags.
+The raw commands 0x0801 and 0x00C0+ are what the TrustZone Monitor actually
+sends to Ernie on the wire.
+
+### Memory Card Issue
+
+Cold reset (0x0801) resets the ARM cores but does NOT power-cycle the Sony
+memory card (MSIF) controller. Without explicitly powering off the memory
+card before the reset, VitaOS boots into a state where the card is visible
+but unmountable (capacity shows "-", apps missing). Powering off via syscon
+command 0x89B before the reset fixes this.
+
+### Failed Approaches
+
+| Approach | Result |
+|----------|--------|
+| Direct SPI cmd 0x0C (COLD_RESET) | Ernie rejects with result 0x3F |
+| Direct SPI cmd 0x00C0 (POWEROFF) | Ernie rejects with result 0x3B |
+| SMC 0x11A (COLD_RESET) | Returns without resetting, RCU stall |
+| SMC 0x11A (SOFT_RESET) | Hangs forever inside Monitor |
+
+### Architecture Notes
+
+- Ernie (Renesas RL78) controls all power rails, reset, and standby/resume
+- TrustZone Secure Monitor at phys `0x40000000`-`0x401FFFFF` handles SMC 0x11A
+- Monitor does polled SPI I/O on SPI0 (`0xE0A00000`) — same controller Linux owns
+- Linux boots in Secure mode (NS bit never set), so SMC instruction works but
+  Monitor's handlers fail because GIC/SPI state has been reconfigured
+- VitaOS power flow: `kscePowerRequestStandby()` → `ksceSysconResetDevice()` →
+  `ksceSysconSendCommand(0x0C, buffer, 4)` → TrustZone SMC → raw Ernie SPI
+
+### Files Modified
+
+- `linux_vita/drivers/mfd/vita-syscon.c` — Reboot notifier sends syscon 0x89B
+  (MSIF power off), 0x888 (game card power off), then 0x0801 (cold reset)
+- `linux_vita/include/linux/mfd/vita-syscon.h` — Added `reboot_nb` to
+  `struct vita_syscon`, added reset type constants
 
 ## Next steps
 - **Find WiFi GPIO pins** — The key blocker for networking. Research avenues:
