@@ -99,9 +99,13 @@ Key repos for research and code reference (shallow clones):
 - `vita-headers` — vitasdk kernel headers (interrupt manager, lowio APIs)
 - `vita-libbaremetal` — xerpi's bare-metal library (SDIF, GPIO, SPI polling drivers)
 - `vita-linux-loader` — xerpi's VitaOS kernel plugin that loads Linux
+- `xerpi-linux-vita` — xerpi's Linux kernel fork (reference for existing Vita drivers)
 - `PSVita-StorageMgr` — SD2Vita storage manager plugin
 - `gamecard-microsd` — original SD2Vita plugin (xyzz)
 - `psvgamesd` — virtual game card with physical SD support
 - `GhidraVitaLoader` — Ghidra plugin for Vita module RE
 - `vita-baremetal-sample` — xerpi's bare-metal sample code
 - `enso_ex`, `broombroom`, `taiHEN` — Vita homebrew/exploit tools
+- `PSP2-batteryFixer` — battery calibration/fix tool
+- `newlib` — C library (reference for Vita toolchain)
+- `henkaku-wiki` — local mirror of wiki.henkaku.xyz (354 pages, raw MediaWiki markup in `pages/`)
