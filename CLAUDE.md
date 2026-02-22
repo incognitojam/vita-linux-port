@@ -80,8 +80,13 @@ Commands can be sent with `echo "cmd" | nc 192.168.1.34 1338`. Available command
 - `boot_watch.sh` — monitors `latest.log` for boot progress after launching Linux
   - Streams all serial output with colored stage markers injected
   - Detects kernel panics and per-stage timeouts for early abort
+  - Auto-logs in as root when login prompt is reached
   - Called automatically by `make boot`; run standalone with `make watch`
   - Requires `serial_log.py` running in another terminal
+- `vita_cmd.sh` — run a command on the Vita over serial and get its output
+  - Usage: `./vita_cmd.sh "uname -a"` or `./vita_cmd.sh "dmesg" 30` (custom timeout)
+  - Blocks until the shell prompt (`# `) returns, then exits
+  - Requires `serial_log.py` running and the Vita booted + logged in
 
 ## Reference repos (`refs/`)
 
