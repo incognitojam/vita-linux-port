@@ -1,0 +1,19 @@
+# Subrepos (have their own git history)
+linux_vita/
+vita-baremetal-linux-loader/
+refs/
+
+# Built artifacts
+*.o
+zImage
+vita1000.dtb
+payload.bin
+kplugin.skprx
+plugin_loader.vpk
+
+# Serial logs
+serial_*.log
+latest.log
+
+# Claude Code
+.claude/
