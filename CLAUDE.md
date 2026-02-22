@@ -58,6 +58,8 @@ The `Makefile` orchestrates the full workflow from macOS. Run `make help` for al
    - Or use `make sync BRANCH=my-branch` to sync a different branch
 4. If build fails: read error output, fix, commit, push, `make deploy` again
 5. After boot: use `./vita_cmd.sh "command"` to run commands on the Vita
+6. To reboot back to VitaOS: `./vita_cmd.sh "reboot"` — performs cold reset, Vita boots to VitaOS with memory card intact
+7. After VitaOS boots, vitacompanion auto-starts — go back to step 3
 
 ### Kernel config
 
