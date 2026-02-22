@@ -18,24 +18,30 @@ DTB              := $(LOCAL_KERNEL_DIR)/arch/arm/boot/dts/vita1000.dtb
 
 help:
 	@echo "Targets:"
-	@echo "  sync    — rsync kernel source to build VM"
+	@echo "  sync    — push git + .config to build VM"
 	@echo "  build   — compile zImage on build VM"
 	@echo "  dtb     — compile device tree on build VM"
 	@echo "  pull    — fetch built zImage + DTB from build VM"
 	@echo "  push    — upload zImage + DTB to Vita via FTP"
 	@echo "  boot    — launch Plugin Loader on Vita (boots Linux)"
+	@echo "  watch   — watch an in-progress boot"
 	@echo "  deploy  — full pipeline: sync → build → pull → push → boot"
 
+# ------- Sync: git push + pull + config -------
+
 sync:
-	rsync -az --delete \
-		--exclude='.git' \
-		--exclude='*.o' \
-		--exclude='*.cmd' \
-		--exclude='.tmp_*' \
-		$(LOCAL_KERNEL_DIR)/ $(BUILD_HOST):$(REMOTE_KERNEL_DIR)/
+	@echo "==> Pushing vita-port to origin..."
+	@cd $(LOCAL_KERNEL_DIR) && git push origin vita-port
+	@echo "==> Pulling on $(BUILD_HOST)..."
+	@ssh $(BUILD_HOST) 'cd $(REMOTE_KERNEL_DIR) && git fetch origin && git reset --hard origin/vita-port'
+	@echo "==> Syncing .config..."
+	@scp -q kernel.config $(BUILD_HOST):$(REMOTE_KERNEL_DIR)/.config
+	@echo "==> Sync complete."
+
+# ------- Build -------
 
 build:
-	ssh $(BUILD_HOST) '$(REMOTE_MAKE) zImage -j6'
+	ssh $(BUILD_HOST) '$(REMOTE_MAKE) zImage -j6 2>&1'
 
 dtb:
 	ssh $(BUILD_HOST) 'cd $(REMOTE_KERNEL_DIR) && \
@@ -44,6 +50,8 @@ dtb:
 			-undef -x assembler-with-cpp arch/arm/boot/dts/vita1000.dts | \
 		scripts/dtc/dtc -I dts -O dtb -o arch/arm/boot/dts/vita1000.dtb -'
 
+# ------- Transfer -------
+
 pull:
 	scp $(BUILD_HOST):$(REMOTE_KERNEL_DIR)/arch/arm/boot/zImage $(ZIMAGE)
 	scp $(BUILD_HOST):$(REMOTE_KERNEL_DIR)/arch/arm/boot/dts/vita1000.dtb $(DTB)
@@ -51,6 +59,8 @@ pull:
 push:
 	curl -s -T $(ZIMAGE) "ftp://$(VITA_IP):$(FTP_PORT)/ux0:/linux/zImage"
 	curl -s -T $(DTB) "ftp://$(VITA_IP):$(FTP_PORT)/ux0:/linux/vita1000.dtb"
+
+# ------- Boot -------
 
 boot:
 	@echo "destroy" | nc -w 3 $(VITA_IP) $(CMD_PORT) > /dev/null 2>&1 || \
@@ -63,5 +73,7 @@ boot:
 
 watch:
 	@./boot_watch.sh
+
+# ------- Full pipeline -------
 
 deploy: sync build pull push boot

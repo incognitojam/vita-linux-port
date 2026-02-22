@@ -40,7 +40,7 @@ See [HARDWARE.md](HARDWARE.md) for peripheral addresses, register maps, and pino
 The `Makefile` orchestrates the full workflow from macOS. Run `make help` for all targets.
 
 - `make deploy` — full pipeline: sync → build → pull → push → boot
-- `make sync` — rsync kernel source to periscope
+- `make sync` — push git commits + copy `.config` to periscope
 - `make build` — compile zImage on periscope via SSH
 - `make dtb` — compile device tree on periscope via SSH
 - `make pull` — fetch built zImage + DTB from periscope
@@ -48,19 +48,26 @@ The `Makefile` orchestrates the full workflow from macOS. Run `make help` for al
 - `make boot` — launch Plugin Loader via VitaCompanion, then stream serial output with boot stage tracking
 - `make watch` — watch an in-progress boot without triggering a launch
 
-### Manual steps (if not using Makefile)
+### Agent workflow (edit → build → test)
 
-1. **Edit** source files locally (kernel, DTS, driver)
-2. **scp to periscope**: `scp linux_vita/path/to/file periscope:~/linux_vita/path/to/file`
-3. **Build on periscope** (ssh):
-   - zImage: `export PATH=/opt/armv7-eabihf--glibc--bleeding-edge-2025.08-1/bin:$PATH && cd ~/linux_vita && make ARCH=arm CROSS_COMPILE=arm-linux- zImage -j6`
-   - DTB: see manual command in Build VM section above
-4. **scp back**: `scp periscope:~/linux_vita/arch/arm/boot/zImage linux_vita/arch/arm/boot/zImage`
-5. **Upload via FTP** (Vita must be in VitaOS, NOT booted into Linux):
-   - `curl -s -T linux_vita/arch/arm/boot/zImage "ftp://192.168.1.34:1337/ux0:/linux/zImage"`
-   - `curl -s -T linux_vita/arch/arm/boot/dts/vita1000.dtb "ftp://192.168.1.34:1337/ux0:/linux/vita1000.dtb"`
-6. **Boot**: Launch Plugin Loader app on Vita → triggers baremetal loader → Linux boots
-7. **Monitor**: serial output via `serial_log.py` in another terminal, or `tail latest.log`
+1. Edit files in `linux_vita/` (drivers, DTS, etc.)
+2. **Commit changes**: `cd linux_vita && git add <files> && git commit -m "..."`
+   - Always stage specific files — never `git add -A` (macOS case-insensitive FS creates spurious diffs)
+   - Run `fix_case_sensitivity.sh` once after cloning to hide the known bad files
+3. `make sync` — pushes to GitHub, pulls on periscope, copies `.config`
+4. `make build` — if error: read output, fix, go to step 1
+5. `make pull` — fetch built binaries
+6. `make push` — upload to Vita
+7. `make boot` — launch and monitor via serial
+
+Or just `make deploy` for steps 3-7 in one command.
+
+### Kernel config
+
+- `kernel.config` (outer repo) is the canonical `.config` — tracked in git
+- `make sync` copies it to periscope as `~/linux_vita/.config`
+- Edit `kernel.config` locally, then `make sync` to apply
+- Buildroot initramfs: periscope has `~/linux_vita/rootfs.cpio.xz` → `~/buildroot/output/images/rootfs.cpio.xz`
 
 ### VitaCompanion (remote control)
 
