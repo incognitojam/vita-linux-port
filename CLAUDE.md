@@ -1,5 +1,6 @@
 # Vita Linux Port
 
+See [BUILDING.md](BUILDING.md) for build instructions (macOS native or Linux VM).
 See [PROGRESS.md](PROGRESS.md) for detailed status, findings, and next steps.
 See [HARDWARE.md](HARDWARE.md) for peripheral addresses, register maps, and pinouts.
 
@@ -7,6 +8,7 @@ See [HARDWARE.md](HARDWARE.md) for peripheral addresses, register maps, and pino
 
 ### Local (macOS)
 - `linux_vita/` — kernel repo, git submodule (branch `vita-port-6.12`, based on Linux 6.12 + xerpi's Vita patches)
+- `~/Developer/linux_vita-macos/` — git worktree of `linux_vita` (branch `macos-build`) with macOS build shims; can build zImage locally with LLVM/Clang (see [BUILDING.md](BUILDING.md))
 - `vita-baremetal-linux-loader/` — loader repo, git submodule (branch `vita-port`)
 - `refs/` — reference repos for research (vita-headers, psvcmd56, StorageMgr, etc.)
 - Clone with `git clone --recursive` to get submodules, or run `git submodule update --init` after cloning
