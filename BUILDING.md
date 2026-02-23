@@ -41,14 +41,15 @@ cd ~/Developer/linux_vita-macos
 # Set up PATH for GNU tools and LLVM
 export PATH="$(brew --prefix findutils)/libexec/gnubin:$(brew --prefix gnu-sed)/libexec/gnubin:$(brew --prefix llvm)/bin:$(brew --prefix lld)/bin:$PATH"
 
-# Common build flags
-BUILDFLAGS='ARCH=arm LLVM=1 HOSTCFLAGS=-Iscripts/macos-include\ -I$(brew --prefix libelf)/include'
-
 # Generate/update config (needed once, or after config changes)
-gmake $BUILDFLAGS olddefconfig
+gmake ARCH=arm LLVM=1 \
+  HOSTCFLAGS="-Iscripts/macos-include -I$(brew --prefix libelf)/include" \
+  olddefconfig
 
 # Build zImage
-gmake $BUILDFLAGS zImage -j$(sysctl -n hw.ncpu)
+gmake ARCH=arm LLVM=1 \
+  HOSTCFLAGS="-Iscripts/macos-include -I$(brew --prefix libelf)/include" \
+  zImage -j$(sysctl -n hw.ncpu)
 
 # Build DTB (clang as preprocessor, then dtc)
 clang -E -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
