@@ -6,3 +6,7 @@
 	path = vita-baremetal-linux-loader
 	url = https://github.com/incognitojam/vita-baremetal-linux-loader.git
 	branch = vita-port
+[submodule "fastfetch"]
+	path = fastfetch
+	url = https://github.com/incognitojam/fastfetch.git
+	branch = dev
