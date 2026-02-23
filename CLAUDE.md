@@ -30,8 +30,8 @@ See [HARDWARE.md](HARDWARE.md) for peripheral addresses, register maps, and pino
 - Model: PCH-1103 (Vita 1000, OLED), no internal user storage
 - Firmware: 3.65 with enso
 - Storage: 3.55GB eMMC (system), 16GB Sony memory card (`ux0:`), SD2Vita 256GB (not yet working)
-- FTP: `ftp://192.168.1.34:1337` (auto-starts via vitacompanion plugin)
-- Upload: `curl -s -T file "ftp://192.168.1.34:1337/ux0:/linux/file"`
+- FTP: `ftp://192.168.1.34:1337` (auto-starts via vitacompanion plugin, only available in VitaOS — not while running Linux)
+- Upload: `curl -s -T file "ftp://192.168.1.34:1337/ux0:/linux/file"` (must reboot to VitaOS first if Vita is running Linux)
 - Files: `ux0:/linux/zImage`, `ux0:/linux/vita1000.dtb`, `ux0:/baremetal/payload.bin`
 - SD2Vita needs YAMT plugin installed first (https://vita.hacks.guide/yamt.html)
 - tai config: `ur0:tai/config.txt` (no storage manager plugin currently installed)
