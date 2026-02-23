@@ -1,7 +1,7 @@
 [submodule "linux_vita"]
 	path = linux_vita
 	url = https://github.com/incognitojam/linux_vita.git
-	branch = macos-build
+	branch = vita-port-6.12
 [submodule "vita-baremetal-linux-loader"]
 	path = vita-baremetal-linux-loader
 	url = https://github.com/incognitojam/vita-baremetal-linux-loader.git
