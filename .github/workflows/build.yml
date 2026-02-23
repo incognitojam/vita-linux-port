@@ -1,0 +1,101 @@
+name: Build smoketest
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-linux:
+    name: Linux (GCC cross-compiler)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q \
+            gcc-arm-linux-gnueabihf \
+            bc flex bison libssl-dev libelf-dev
+
+      - name: Configure kernel
+        working-directory: linux_vita
+        run: |
+          cp ../kernel.config .config
+          # No initramfs in CI — rootfs.cpio.xz is not in the repo
+          sed -i 's|^CONFIG_INITRAMFS_SOURCE=.*|CONFIG_INITRAMFS_SOURCE=""|' .config
+          make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- olddefconfig
+
+      - name: Build host scripts
+        working-directory: linux_vita
+        run: make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- scripts -j$(nproc)
+
+      - name: Build device tree
+        working-directory: linux_vita
+        run: |
+          arm-linux-gnueabihf-cpp \
+            -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
+            -undef -x assembler-with-cpp arch/arm/boot/dts/vita1000.dts | \
+            scripts/dtc/dtc -I dts -O dtb -o arch/arm/boot/dts/vita1000.dtb -
+
+      - name: Verify outputs
+        working-directory: linux_vita
+        run: |
+          test -f arch/arm/boot/dts/vita1000.dtb
+          file arch/arm/boot/dts/vita1000.dtb
+          echo "Build successful"
+
+  build-macos:
+    name: macOS (LLVM/Clang)
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: brew install llvm lld libelf make findutils gnu-sed
+
+      - name: Configure kernel
+        working-directory: linux_vita
+        run: |
+          export PATH="$(brew --prefix findutils)/libexec/gnubin:$(brew --prefix gnu-sed)/libexec/gnubin:$(brew --prefix llvm)/bin:$(brew --prefix lld)/bin:$PATH"
+          cp ../kernel.config .config
+          # No initramfs in CI — rootfs.cpio.xz is not in the repo
+          sed -i 's|^CONFIG_INITRAMFS_SOURCE=.*|CONFIG_INITRAMFS_SOURCE=""|' .config
+          gmake ARCH=arm LLVM=1 \
+            HOSTCFLAGS="-Iscripts/macos-include -I$(brew --prefix libelf)/include" \
+            olddefconfig
+
+      - name: Build host scripts
+        working-directory: linux_vita
+        run: |
+          export PATH="$(brew --prefix findutils)/libexec/gnubin:$(brew --prefix gnu-sed)/libexec/gnubin:$(brew --prefix llvm)/bin:$(brew --prefix lld)/bin:$PATH"
+          gmake ARCH=arm LLVM=1 \
+            HOSTCFLAGS="-Iscripts/macos-include -I$(brew --prefix libelf)/include" \
+            scripts -j$(sysctl -n hw.ncpu)
+
+      - name: Build device tree
+        working-directory: linux_vita
+        run: |
+          export PATH="$(brew --prefix llvm)/bin:$PATH"
+          clang -E -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
+            -undef -x assembler-with-cpp arch/arm/boot/dts/vita1000.dts | \
+            scripts/dtc/dtc -I dts -O dtb -o arch/arm/boot/dts/vita1000.dtb -
+
+      - name: Verify outputs
+        working-directory: linux_vita
+        run: |
+          test -f arch/arm/boot/dts/vita1000.dtb
+          file arch/arm/boot/dts/vita1000.dtb
+          echo "Build successful"
