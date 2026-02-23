@@ -259,6 +259,9 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - **eMMC auto-mount** — `S05vita` init script creates `/dev/vita/*` symlinks, fstab
   provides `mount /mnt/ur0` etc. (read-only, noauto)
 - **Filesystem support** — CONFIG_EXFAT_FS=y, CONFIG_VFAT_FS=y, CONFIG_BLK_DEV_LOOP=y
+- **Debug infrastructure** — debugfs (auto-mounted), dynamic debug (687 callsites),
+  MMC debug, SysRq over serial, printk timestamps, softlockup/hung task detection,
+  frame pointer unwinder for clean stack traces
 
 ## What doesn't work / not yet implemented
 - **WiFi** — SD8787 chip is electrically present on SDIF2 (VitaOS left it powered),
@@ -271,8 +274,6 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
   `os0/kd/usbdev_serial.skprx` (accessible from mounted os0 partition).
 - **Vita memory card** — Uses MSIF (0xE0900000), proprietary protocol with crypto auth.
   Not standard SD. Would need custom driver.
-- **Kernel debug** — `CONFIG_DEBUG_FS` and `CONFIG_DYNAMIC_DEBUG` not set. Can't use
-  dynamic debug for MMC/SDHCI troubleshooting.
 - **File transfer** — No network = no scp/wget. Workflow: edit rootfs overlay on
   periscope → rebuild → upload zImage via FTP.
 
@@ -330,9 +331,17 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - `CONFIG_BLK_DEV_LOOP=y` — loop block devices
 - `CONFIG_VFAT_FS=y` + `CONFIG_FAT_FS=y` — FAT16 filesystem
 - `CONFIG_NLS_CODEPAGE_437=y` + `CONFIG_NLS_ISO8859_1=y` — NLS for vfat
+- `CONFIG_DEBUG_FS=y` — debugfs filesystem (required by mwifiex, MMC, clock, GPIO debug)
+- `CONFIG_DYNAMIC_DEBUG=y` — per-callsite `pr_debug`/`dev_dbg` control via debugfs
+- `CONFIG_MMC_DEBUG=y` — MMC subsystem debug logging
+- `CONFIG_MAGIC_SYSRQ=y` + `SERIAL=y` — SysRq over serial for emergency debug
+- `CONFIG_PRINTK_TIME=y` — timestamps on kernel messages
+- `CONFIG_SOFTLOCKUP_DETECTOR=y` — CPU soft lockup warnings
+- `CONFIG_DETECT_HUNG_TASK=y` — hung task warnings (120s timeout)
+- `CONFIG_UNWINDER_FRAME_POINTER=y` — better stack traces in panics/oopses
 
 ## Buildroot rootfs overlay (on periscope: `~/buildroot/rootfs-overlay/`)
-- `etc/fstab` — standard mounts + Vita eMMC partitions (ro, noauto)
+- `etc/fstab` — standard mounts + debugfs + Vita eMMC partitions (ro, noauto)
 - `etc/init.d/S05vita` — creates `/dev/vita/*` symlinks to eMMC partitions
 - `mnt/{os0,vs0,sa0,tm0,vd0,ud0,pd0,ur0}/` — mountpoint directories
 
@@ -406,8 +415,9 @@ command 0x89B before the reset fixes this.
   - HENkaku Discord / community
   - xerpi's or SonicMastr's research
   - RE VitaOS modules in Ghidra (os0/kd/wlanbt_robin_img_ax.skprx, lowio.skprx)
-- **Enable wireless stack** — CONFIG_WIRELESS, CONFIG_MWIFIEX, CONFIG_MWIFIEX_SDIO,
-  CONFIG_DEBUG_FS, CONFIG_DYNAMIC_DEBUG. Add mrvl/sd8787_uapsta.bin to rootfs.
+- **Enable wireless stack** — CONFIG_WIRELESS, CONFIG_MWIFIEX, CONFIG_MWIFIEX_SDIO.
+  Add mrvl/sd8787_uapsta.bin firmware to rootfs. Debug infra (debugfs, dynamic debug)
+  already enabled for SDIO troubleshooting.
 - **USB controller RE** — Find UDC MMIO base from os0/kd/usbstor.skprx via Ghidra.
   Would enable USB gadget networking as alternative to WiFi.
 - **SD2Vita** — Install YAMT on VitaOS, verify adapter works, then revisit Linux.

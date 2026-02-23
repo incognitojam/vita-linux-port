@@ -6,9 +6,10 @@ See [HARDWARE.md](HARDWARE.md) for peripheral addresses, register maps, and pino
 ## Environment
 
 ### Local (macOS)
-- `linux_vita/` — kernel repo (branch `vita-port`, based on xerpi's `rebase-6.7.0-rc5`)
-- `vita-baremetal-linux-loader/` — loader repo (branch `vita-port`)
+- `linux_vita/` — kernel repo, git submodule (branch `vita-port`, based on xerpi's `rebase-6.7.0-rc5`)
+- `vita-baremetal-linux-loader/` — loader repo, git submodule (branch `vita-port`)
 - `refs/` — reference repos for research (vita-headers, psvcmd56, StorageMgr, etc.)
+- Clone with `git clone --recursive` to get submodules, or run `git submodule update --init` after cloning
 - Edit locally, then follow the build/deploy workflow below
 
 ### Build VM
@@ -55,7 +56,7 @@ The `Makefile` orchestrates the full workflow from macOS. Run `make help` for al
    - Always stage specific files — never `git add -A` (macOS case-insensitive FS creates spurious diffs)
    - Run `fix_case_sensitivity.sh` once after cloning to hide the known bad files
 3. `make deploy` — syncs periscope, builds, pulls binaries, uploads to Vita, boots
-   - Or use `make sync BRANCH=my-branch` to sync a different branch
+   - Use `BRANCH=my-branch` to deploy a different branch (e.g. `make deploy BRANCH=my-feature`)
 4. If build fails: read error output, fix, commit, push, `make deploy` again
 5. After boot: use `./vita_cmd.sh "command"` to run commands on the Vita
 6. To reboot back to VitaOS: `./vita_cmd.sh "reboot"` — performs cold reset, Vita boots to VitaOS with memory card intact
