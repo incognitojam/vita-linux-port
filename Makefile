@@ -14,7 +14,7 @@ LOCAL_KERNEL_DIR := linux_vita
 ZIMAGE           := $(LOCAL_KERNEL_DIR)/arch/arm/boot/zImage
 DTB              := $(LOCAL_KERNEL_DIR)/arch/arm/boot/dts/vita1000.dtb
 
-.PHONY: sync build pull push boot deploy dtb help watch
+.PHONY: sync build build-zimage build-dtb dtb pull push boot deploy help watch
 
 BRANCH ?= vita-port
 
@@ -40,10 +40,12 @@ sync:
 
 # ------- Build -------
 
-build:
+build: build-zimage build-dtb
+
+build-zimage:
 	ssh $(BUILD_HOST) '$(REMOTE_MAKE) zImage -j6 2>&1'
 
-dtb:
+build-dtb dtb:
 	ssh $(BUILD_HOST) 'cd $(REMOTE_KERNEL_DIR) && \
 		$(CROSS_COMPILE_PATH)/arm-linux-cpp \
 			-nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
