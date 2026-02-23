@@ -16,7 +16,7 @@ DTB              := $(LOCAL_KERNEL_DIR)/arch/arm/boot/dts/vita1000.dtb
 
 .PHONY: sync build build-zimage build-dtb dtb pull push boot deploy help watch
 
-BRANCH ?= vita-port
+BRANCH ?= vita-port-6.12
 
 help:
 	@echo "Targets:"

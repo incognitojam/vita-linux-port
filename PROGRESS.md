@@ -4,7 +4,7 @@
 
 ## Status: LINUX BOOTS — eMMC PARTITIONS MOUNTED — REBOOT WORKS
 
-Linux 6.7.0-rc5 boots to a Buildroot shell on the PlayStation Vita with all 4 Cortex-A9 cores,
+Linux 6.12 boots to a Buildroot shell on the PlayStation Vita with all 4 Cortex-A9 cores,
 framebuffer, touchscreen, buttons, GPIO LEDs, RTC, serial console, and SDHCI storage (eMMC readable).
 All VitaOS partitions on the eMMC are mountable and readable from Linux.
 `reboot` performs a clean hardware cold reset back to VitaOS with memory card intact.
@@ -209,7 +209,7 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 
 ### Local (macOS)
 - `/Users/cameron/Developer/vita-linux-port/` — working directory with:
-  - `linux_vita/` — cloned kernel repo (shallow, branch `rebase-6.7.0-rc5`)
+  - `linux_vita/` — cloned kernel repo (branch `vita-port-6.12`, based on Linux 6.12)
   - `vita-baremetal-linux-loader/` — cloned loader repo
   - `refs/` — reference repos (vita-libbaremetal, vita-headers, psvcmd56, etc.)
 - Edit locally with proper tools, `scp` changed files to periscope, build there
@@ -218,7 +218,7 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - **periscope** (`ssh periscope`) — Debian 13 aarch64 (virtualized + Rosetta) — main dev VM
 
 ### Periscope layout
-- `~/linux_vita` — xerpi's kernel, branch `rebase-6.7.0-rc5` (patched)
+- `~/linux_vita` — xerpi's kernel, branch `vita-port-6.12` (Linux 6.12 + Vita patches)
 - `~/buildroot` — buildroot 2025.11.1 (built natively, `BR2_TOOLCHAIN_EXTERNAL_CUSTOM`)
 - `~/vita-baremetal-loader` — kernel plugin for standby/resume
 - `~/vita-libbaremetal` — bare-metal hardware library

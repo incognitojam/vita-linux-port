@@ -6,7 +6,7 @@ See [HARDWARE.md](HARDWARE.md) for peripheral addresses, register maps, and pino
 ## Environment
 
 ### Local (macOS)
-- `linux_vita/` — kernel repo, git submodule (branch `vita-port`, based on xerpi's `rebase-6.7.0-rc5`)
+- `linux_vita/` — kernel repo, git submodule (branch `vita-port-6.12`, based on Linux 6.12 + xerpi's Vita patches)
 - `vita-baremetal-linux-loader/` — loader repo, git submodule (branch `vita-port`)
 - `refs/` — reference repos for research (vita-headers, psvcmd56, StorageMgr, etc.)
 - Clone with `git clone --recursive` to get submodules, or run `git submodule update --init` after cloning
@@ -41,7 +41,7 @@ See [HARDWARE.md](HARDWARE.md) for peripheral addresses, register maps, and pino
 The `Makefile` orchestrates the full workflow from macOS. Run `make help` for all targets.
 
 - `make deploy` — full pipeline: sync → build → pull → push → boot
-- `make sync` — fetch + reset periscope to `BRANCH` (default `vita-port`), copy `.config`
+- `make sync` — fetch + reset periscope to `BRANCH` (default `vita-port-6.12`), copy `.config`
 - `make build` — compile zImage on periscope via SSH
 - `make dtb` — compile device tree on periscope via SSH
 - `make pull` — fetch built zImage + DTB from periscope
@@ -52,7 +52,7 @@ The `Makefile` orchestrates the full workflow from macOS. Run `make help` for al
 ### Agent workflow (edit → build → test)
 
 1. Edit files in `linux_vita/` (drivers, DTS, etc.)
-2. **Commit and push**: `cd linux_vita && git add <files> && git commit -m "..." && git push origin vita-port`
+2. **Commit and push**: `cd linux_vita && git add <files> && git commit -m "..." && git push origin vita-port-6.12`
    - Always stage specific files — never `git add -A` (macOS case-insensitive FS creates spurious diffs)
    - Run `fix_case_sensitivity.sh` once after cloning to hide the known bad files
 3. `make deploy` — syncs periscope, builds, pulls binaries, uploads to Vita, boots
