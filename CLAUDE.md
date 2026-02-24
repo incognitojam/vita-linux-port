@@ -1,5 +1,6 @@
 # Vita Linux Port
 
+See [BUILDING.md](BUILDING.md) for build instructions (macOS native or Linux VM).
 See [PROGRESS.md](PROGRESS.md) for detailed status, findings, and next steps.
 See [HARDWARE.md](HARDWARE.md) for peripheral addresses, register maps, and pinouts.
 
@@ -7,6 +8,7 @@ See [HARDWARE.md](HARDWARE.md) for peripheral addresses, register maps, and pino
 
 ### Local (macOS)
 - `linux_vita/` — kernel repo, git submodule (branch `vita-port-6.12`, based on Linux 6.12 + xerpi's Vita patches)
+- `~/Developer/linux_vita-macos/` — git worktree of `linux_vita` (branch `macos-build`) with macOS build shims; can build zImage locally with LLVM/Clang (see [BUILDING.md](BUILDING.md))
 - `vita-baremetal-linux-loader/` — loader repo, git submodule (branch `vita-port`)
 - `refs/` — reference repos for research (vita-headers, psvcmd56, StorageMgr, etc.)
 - Clone with `git clone --recursive` to get submodules, or run `git submodule update --init` after cloning
@@ -14,14 +16,7 @@ See [HARDWARE.md](HARDWARE.md) for peripheral addresses, register maps, and pino
 
 ### Build VM
 - **periscope** (`ssh periscope`) — Debian 13 aarch64 (UTM + Rosetta)
-- Cross-compiler: `/opt/armv7-eabihf--glibc--bleeding-edge-2025.08-1`
-- Build: `export PATH=/opt/armv7-eabihf--glibc--bleeding-edge-2025.08-1/bin:$PATH && cd ~/linux_vita && make ARCH=arm CROSS_COMPILE=arm-linux- zImage -j6`
-- DTB (manual, not in `make dtbs`):
-  ```
-  cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
-      -undef -x assembler-with-cpp arch/arm/boot/dts/vita1000.dts | \
-      scripts/dtc/dtc -I dts -O dtb -o arch/arm/boot/dts/vita1000.dtb -
-  ```
+- See [BUILDING.md](BUILDING.md) for cross-compiler and build details
 - Buildroot: `cd ~/buildroot && make -j6` → `output/images/rootfs.cpio.xz`
   - Uses `BR2_TOOLCHAIN_EXTERNAL_CUSTOM` (not Bootlin preset, which isn't available on aarch64 hosts)
   - Rootfs overlay: `~/buildroot/rootfs-overlay/` (add files to include in initramfs)
