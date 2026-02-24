@@ -16,10 +16,10 @@ Ctrl+] to quit. Ctrl+C passes through to the target.
 
 ## External input
 
-By default, a named pipe is created at `/tmp/tigard.pipe`. Other processes can send commands to the serial device:
+By default, a named pipe is created at `/tmp/serial.pipe`. Other processes can send commands to the serial device:
 
 ```bash
-printf 'uname -a\n' > /tmp/tigard.pipe
+printf 'uname -a\n' > /tmp/serial.pipe
 ```
 
 Disable with `--no-pipe`, or change the path with `--pipe /tmp/other.pipe`.

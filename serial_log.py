@@ -20,7 +20,7 @@ from pathlib import Path
 import serial
 import serial.tools.list_ports
 
-DEFAULT_PIPE = "/tmp/tigard.pipe"
+DEFAULT_PIPE = "/tmp/serial.pipe"
 
 
 def find_tigard_ports():

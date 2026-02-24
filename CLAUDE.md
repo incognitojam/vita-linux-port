@@ -76,7 +76,7 @@ Commands can be sent with `echo "cmd" | nc 192.168.1.34 1338`. Available command
 - `serial_log.py` — Tigard serial console with logging and bidirectional I/O. See `SERIAL.md` for usage.
   - Logs are written to `logs/` directory (auto-created)
   - Read serial output: `logs/latest.log` symlinks to the current/most recent log
-  - Send commands to the device: `printf 'cmd\n' > /tmp/tigard.pipe`
+  - Send commands to the device: `printf 'cmd\n' > /tmp/serial.pipe`
   - Pipe input is paced at 5ms/byte to avoid target buffer overflows
 - `boot_watch.sh` — monitors `logs/latest.log` for boot progress after launching Linux
   - Streams all serial output with colored stage markers injected

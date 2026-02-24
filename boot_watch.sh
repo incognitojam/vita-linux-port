@@ -70,7 +70,7 @@ while true; do
       # matching stale output from a previous boot in the same log
       [[ "$line" == *"Run /init as init process"* ]] && (( seen >= 1 && seen < 6 )) && advance "Userspace init" 6
       [[ "$line" == *"Welcome to Buildroot"* ]] && (( seen >= 1 && seen < 7 )) && advance "Login prompt reached" 7 && \
-        { sleep 0.5; printf 'root\n' > /tmp/tigard.pipe 2>/dev/null || true; }
+        { sleep 0.5; printf 'root\n' > /tmp/serial.pipe 2>/dev/null || true; }
 
       # Check for kernel panic at any stage
       if [[ "$line" == *"Kernel panic"* ]]; then
