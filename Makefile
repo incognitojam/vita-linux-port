@@ -32,32 +32,26 @@ else
   NPROC         := $(shell nproc)
 endif
 
-.PHONY: config build build-zimage build-dtb dtb push boot deploy help watch
+.PHONY: config build build-zimage build-dtb dtb push boot deploy help watch serial
 
-help:
-	@echo "Targets:"
-	@echo "  config  — copy kernel.config to linux_vita/.config and run olddefconfig"
-	@echo "  build   — compile zImage + DTB locally"
-	@echo "  dtb     — compile device tree only"
-	@echo "  push    — upload zImage + DTB to Vita via FTP"
-	@echo "  boot    — launch Plugin Loader on Vita (boots Linux)"
-	@echo "  watch   — watch an in-progress boot"
-	@echo "  deploy  — full pipeline: build → push → boot"
+help: ## show this help
+	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | \
+		awk -F ':.*## ' '{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
 # ------- Config -------
 
-config:
+config: ## copy kernel.config → .config and run olddefconfig
 	@cp kernel.config $(LOCAL_KERNEL_DIR)/.config
 	@$(KMAKE) -C $(LOCAL_KERNEL_DIR) olddefconfig
 
 # ------- Build -------
 
-build: build-zimage build-dtb
+build: build-zimage build-dtb ## compile zImage + DTB locally
 
 build-zimage:
 	$(KMAKE) -C $(LOCAL_KERNEL_DIR) zImage -j$(NPROC)
 
-build-dtb dtb:
+build-dtb dtb: ## compile device tree only
 	cd $(LOCAL_KERNEL_DIR) && \
 		$(CPP) -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 			-undef -x assembler-with-cpp arch/arm/boot/dts/vita1000.dts | \
@@ -65,13 +59,13 @@ build-dtb dtb:
 
 # ------- Transfer -------
 
-push:
+push: ## upload zImage + DTB to Vita via FTP
 	curl -s -T $(ZIMAGE) "ftp://$(VITA_IP):$(FTP_PORT)/ux0:/linux/zImage"
 	curl -s -T $(DTB) "ftp://$(VITA_IP):$(FTP_PORT)/ux0:/linux/vita1000.dtb"
 
 # ------- Boot -------
 
-boot:
+boot: ## launch Plugin Loader on Vita (boots Linux)
 	@echo "destroy" | nc -w 3 $(VITA_IP) $(CMD_PORT) > /dev/null 2>&1 || \
 		{ echo "Vita not reachable on port $(CMD_PORT) — is it in VitaOS?"; exit 1; }; \
 	start_line=$$(wc -l < latest.log 2>/dev/null | tr -d ' ' || echo 0); \
@@ -80,9 +74,12 @@ boot:
 	echo "launch PLGINLDR0" | nc -w 3 $(VITA_IP) $(CMD_PORT); \
 	./boot_watch.sh $$start_line
 
-watch:
+watch: ## watch an in-progress boot
 	@./boot_watch.sh
+
+serial: ## start serial console (Tigard)
+	./serial_log.py
 
 # ------- Full pipeline -------
 
-deploy: build push boot
+deploy: build push boot ## full pipeline: build → push → boot
