@@ -207,26 +207,18 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 
 ## Environment
 
-### Local (macOS)
-- `/Users/cameron/Developer/vita-linux-port/` — working directory with:
-  - `linux_vita/` — cloned kernel repo (branch `vita-port-6.12`, based on Linux 6.12)
-  - `vita-baremetal-linux-loader/` — cloned loader repo
-  - `refs/` — reference repos (vita-libbaremetal, vita-headers, psvcmd56, etc.)
-- Edit locally with proper tools, `scp` changed files to periscope, build there
+### Local (macOS or Linux)
+- `linux_vita/` — kernel repo, git submodule (branch `vita-port-6.12`, based on Linux 6.12)
+- `vita-baremetal-linux-loader/` — loader repo, git submodule
+- `refs/` — reference repos (vita-libbaremetal, vita-headers, psvcmd56, etc.)
+- Build locally with LLVM/Clang (macOS) or Bootlin GCC cross-compiler (Linux)
+- See [BUILDING.md](BUILDING.md) for prerequisites and build instructions
 
-### VM (UTM on macOS)
-- **periscope** (`ssh periscope`) — Debian 13 aarch64 (virtualized + Rosetta) — main dev VM
-
-### Periscope layout
-- `~/linux_vita` — xerpi's kernel, branch `vita-port-6.12` (Linux 6.12 + Vita patches)
+### Buildroot VM (periscope)
+- **periscope** (`ssh periscope`) — Debian 13 aarch64 (UTM + Rosetta) — used for building the rootfs only
 - `~/buildroot` — buildroot 2025.11.1 (built natively, `BR2_TOOLCHAIN_EXTERNAL_CUSTOM`)
-- `~/vita-baremetal-loader` — kernel plugin for standby/resume
-- `~/vita-libbaremetal` — bare-metal hardware library
-- `~/vita-baremetal-linux-loader` — payload that loads zImage+DTB (patched with cache flush)
-- `~/vita_plugin_loader` — VPK app to trigger kernel plugin
-- Cross-compiler: `/opt/armv7-eabihf--glibc--bleeding-edge-2025.08-1`
-- VitaSDK: `/usr/local/vitasdk`
-- **Build command:** `export PATH=/opt/armv7-eabihf--glibc--bleeding-edge-2025.08-1/bin:$PATH && cd ~/linux_vita && make ARCH=arm CROSS_COMPILE=arm-linux- zImage -j6`
+- Rootfs overlay: `~/buildroot/rootfs-overlay/`
+- VitaSDK: `/usr/local/vitasdk` (for building Vita homebrew plugins)
 
 
 ### Vita
@@ -275,7 +267,7 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - **Vita memory card** — Uses MSIF (0xE0900000), proprietary protocol with crypto auth.
   Not standard SD. Would need custom driver.
 - **File transfer** — No network = no scp/wget. Workflow: edit rootfs overlay on
-  periscope → rebuild → upload zImage via FTP.
+  periscope, rebuild rootfs, then rebuild kernel locally and upload zImage via FTP.
 
 ## Modified files (from upstream xerpi)
 

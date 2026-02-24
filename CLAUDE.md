@@ -1,25 +1,24 @@
 # Vita Linux Port
 
-See [BUILDING.md](BUILDING.md) for build instructions (macOS native or Linux VM).
+See [BUILDING.md](BUILDING.md) for build instructions (macOS or Linux).
 See [PROGRESS.md](PROGRESS.md) for detailed status, findings, and next steps.
 See [HARDWARE.md](HARDWARE.md) for peripheral addresses, register maps, and pinouts.
 
 ## Environment
 
-### Local (macOS)
+### Local (macOS or Linux)
 - `linux_vita/` — kernel repo, git submodule (branch `vita-port-6.12`, based on Linux 6.12 + xerpi's Vita patches)
-- `~/Developer/linux_vita-macos/` — git worktree of `linux_vita` (branch `macos-build`) with macOS build shims; can build zImage locally with LLVM/Clang (see [BUILDING.md](BUILDING.md))
 - `vita-baremetal-linux-loader/` — loader repo, git submodule (branch `vita-port`)
 - `refs/` — reference repos for research (vita-headers, psvcmd56, StorageMgr, etc.)
 - Clone with `git clone --recursive` to get submodules, or run `git submodule update --init` after cloning
-- Edit locally, then follow the build/deploy workflow below
+- Builds locally: macOS uses LLVM/Clang, Linux uses Bootlin GCC cross-compiler (see [BUILDING.md](BUILDING.md))
 
-### Build VM
-- **periscope** (`ssh periscope`) — Debian 13 aarch64 (UTM + Rosetta)
-- See [BUILDING.md](BUILDING.md) for cross-compiler and build details
+### Buildroot VM (periscope)
+- **periscope** (`ssh periscope`) — Debian 13 aarch64 (UTM + Rosetta) — used for building the rootfs only
 - Buildroot: `cd ~/buildroot && make -j6` → `output/images/rootfs.cpio.xz`
   - Uses `BR2_TOOLCHAIN_EXTERNAL_CUSTOM` (not Bootlin preset, which isn't available on aarch64 hosts)
   - Rootfs overlay: `~/buildroot/rootfs-overlay/` (add files to include in initramfs)
+- Fetch rootfs for local builds: `scp periscope:~/buildroot/output/images/rootfs.cpio.xz linux_vita/rootfs.cpio.xz`
 
 ### Vita
 - Model: PCH-1103 (Vita 1000, OLED), no internal user storage
@@ -33,13 +32,12 @@ See [HARDWARE.md](HARDWARE.md) for peripheral addresses, register maps, and pino
 
 ## Build & Deploy Workflow
 
-The `Makefile` orchestrates the full workflow from macOS. Run `make help` for all targets.
+The `Makefile` orchestrates the full workflow from macOS or Linux. Run `make help` for all targets.
 
-- `make deploy` — full pipeline: sync → build → pull → push → boot
-- `make sync` — fetch + reset periscope to `BRANCH` (default `vita-port-6.12`), copy `.config`
-- `make build` — compile zImage on periscope via SSH
-- `make dtb` — compile device tree on periscope via SSH
-- `make pull` — fetch built zImage + DTB from periscope
+- `make deploy` — full pipeline: build → push → boot
+- `make config` — copy `kernel.config` to `linux_vita/.config` and run `olddefconfig`
+- `make build` — compile zImage + DTB locally
+- `make dtb` — compile device tree only
 - `make push` — upload zImage + DTB to Vita via FTP
 - `make boot` — launch Plugin Loader via VitaCompanion, then stream serial output with boot stage tracking
 - `make watch` — watch an in-progress boot without triggering a launch
@@ -47,22 +45,21 @@ The `Makefile` orchestrates the full workflow from macOS. Run `make help` for al
 ### Agent workflow (edit → build → test)
 
 1. Edit files in `linux_vita/` (drivers, DTS, etc.)
-2. **Commit and push**: `cd linux_vita && git add <files> && git commit -m "..." && git push origin vita-port-6.12`
+2. `make deploy` — builds locally, uploads to Vita, boots
+3. If build fails: read error output, fix, `make deploy` again
+4. After boot: use `./vita_cmd.sh "command"` to run commands on the Vita
+5. To reboot back to VitaOS: `./vita_cmd.sh "reboot"` — performs cold reset, Vita boots to VitaOS with memory card intact
+6. After VitaOS boots, vitacompanion auto-starts — go back to step 2
+7. **Commit and push** when changes are working: `cd linux_vita && git add <files> && git commit -m "..." && git push origin vita-port-6.12`
    - Always stage specific files — never `git add -A` (macOS case-insensitive FS creates spurious diffs)
    - Run `fix_case_sensitivity.sh` once after cloning to hide the known bad files
-3. `make deploy` — syncs periscope, builds, pulls binaries, uploads to Vita, boots
-   - Use `BRANCH=my-branch` to deploy a different branch (e.g. `make deploy BRANCH=my-feature`)
-4. If build fails: read error output, fix, commit, push, `make deploy` again
-5. After boot: use `./vita_cmd.sh "command"` to run commands on the Vita
-6. To reboot back to VitaOS: `./vita_cmd.sh "reboot"` — performs cold reset, Vita boots to VitaOS with memory card intact
-7. After VitaOS boots, vitacompanion auto-starts — go back to step 3
 
 ### Kernel config
 
 - `kernel.config` (outer repo) is the canonical `.config` — tracked in git
-- `make sync` copies it to periscope as `~/linux_vita/.config`
-- Edit `kernel.config` locally, then `make sync` to apply
-- Buildroot initramfs: periscope has `~/linux_vita/rootfs.cpio.xz` → `~/buildroot/output/images/rootfs.cpio.xz`
+- `make config` copies it to `linux_vita/.config` and runs `olddefconfig`
+- Edit `kernel.config` locally, then `make config` to apply
+- Buildroot initramfs (`rootfs.cpio.xz`) must be present in `linux_vita/` — fetch from periscope if needed
 
 ### VitaCompanion (remote control)
 
