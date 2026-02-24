@@ -48,7 +48,7 @@ jobs:
         working-directory: linux_vita
         run: |
           export PATH="${{ github.workspace }}/.toolchains/${{ env.BOOTLIN_DIR }}/bin:$PATH"
-          cp ../kernel.config .config
+          make ARCH=arm CROSS_COMPILE=arm-linux- vita_defconfig
           # No initramfs in CI — rootfs.cpio.xz is not in the repo
           sed -i 's|^CONFIG_INITRAMFS_SOURCE=.*|CONFIG_INITRAMFS_SOURCE=""|' .config
           make ARCH=arm CROSS_COMPILE=arm-linux- olddefconfig
@@ -93,7 +93,9 @@ jobs:
         working-directory: linux_vita
         run: |
           export PATH="$(brew --prefix findutils)/libexec/gnubin:$(brew --prefix gnu-sed)/libexec/gnubin:$(brew --prefix llvm)/bin:$(brew --prefix lld)/bin:$PATH"
-          cp ../kernel.config .config
+          gmake ARCH=arm LLVM=1 \
+            HOSTCFLAGS="-Iscripts/macos-include -I$(brew --prefix libelf)/include" \
+            vita_defconfig
           # No initramfs in CI — rootfs.cpio.xz is not in the repo
           sed -i 's|^CONFIG_INITRAMFS_SOURCE=.*|CONFIG_INITRAMFS_SOURCE=""|' .config
           gmake ARCH=arm LLVM=1 \
