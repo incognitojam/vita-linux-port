@@ -8,7 +8,7 @@ Bidirectional serial console for the [Tigard](https://github.com/tigard-tools/ti
 ./serial_log.py              # auto-detect Tigard, pick channel interactively
 ./serial_log.py -c 0         # skip prompt, use UART (channel 0)
 ./serial_log.py -b 9600      # custom baud rate (default: 115200)
-./serial_log.py -o boot.log  # custom log file (default: serial_TIMESTAMP.log)
+./serial_log.py -o boot.log  # custom log file (default: logs/serial_TIMESTAMP.log)
 ./serial_log.py -p /dev/...  # skip auto-detection, use specific port
 ```
 
@@ -26,11 +26,11 @@ Disable with `--no-pipe`, or change the path with `--pipe /tmp/other.pipe`.
 
 ## Reading the log
 
-`latest.log` is a symlink that always points to the current session's log file:
+`logs/latest.log` is a symlink that always points to the current session's log file (all logs are written to the `logs/` directory):
 
 ```bash
-tail -f latest.log           # follow output from another terminal
-cat latest.log               # read the full log
+tail -f logs/latest.log      # follow output from another terminal
+cat logs/latest.log          # read the full log
 ```
 
 ## Notes

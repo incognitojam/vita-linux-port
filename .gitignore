@@ -10,8 +10,7 @@ kplugin.skprx
 plugin_loader.vpk
 
 # Serial logs
-serial_*.log
-latest.log
+logs/
 
 # Claude Code
 .claude/

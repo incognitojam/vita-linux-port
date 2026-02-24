@@ -92,7 +92,7 @@ push: ## upload zImage + DTB to Vita via FTP
 boot: ## launch Plugin Loader on Vita (boots Linux)
 	@echo "destroy" | nc -w 3 $(VITA_IP) $(CMD_PORT) > /dev/null 2>&1 || \
 		{ echo "Vita not reachable on port $(CMD_PORT) — is it in VitaOS?"; exit 1; }; \
-	start_line=$$(wc -l < latest.log 2>/dev/null | tr -d ' ' || echo 0); \
+	start_line=$$(wc -l < logs/latest.log 2>/dev/null | tr -d ' ' || echo 0); \
 	sleep 1; \
 	echo "Launching Plugin Loader..."; \
 	echo "launch PLGINLDR0" | nc -w 3 $(VITA_IP) $(CMD_PORT); \

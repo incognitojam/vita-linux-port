@@ -115,16 +115,18 @@ def main():
             port = pick_channel(ports)
 
     # --- Setup ---
-    outfile = args.output or f"serial_{datetime.now():%Y%m%d_%H%M%S}.log"
+    logdir = "logs"
+    os.makedirs(logdir, exist_ok=True)
+    outfile = args.output or os.path.join(logdir, f"serial_{datetime.now():%Y%m%d_%H%M%S}.log")
     pipe_path = None if args.no_pipe else setup_pipe(args.pipe)
 
-    # Symlink latest.log -> current log file
-    latest = "latest.log"
+    # Symlink logs/latest.log -> current log file
+    latest = os.path.join(logdir, "latest.log")
     try:
         os.remove(latest)
     except FileNotFoundError:
         pass
-    os.symlink(outfile, latest)
+    os.symlink(os.path.basename(outfile) if os.path.dirname(outfile) == logdir else os.path.abspath(outfile), latest)
 
     print(f"Port:   {port}")
     print(f"Baud:   {args.baud}")

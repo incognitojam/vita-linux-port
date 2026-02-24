@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Run a command on the Vita via serial and print its output.
 # Blocks until the shell prompt returns (or timeout).
-# Requires serial_log.py to be running (provides /tmp/tigard.pipe and latest.log).
+# Requires serial_log.py to be running (provides /tmp/tigard.pipe and logs/latest.log).
 set -euo pipefail
 
-LOGFILE="latest.log"
+LOGFILE="logs/latest.log"
 PIPE="/tmp/tigard.pipe"
 TIMEOUT="${2:-10}"
 PROMPT_PATTERN='# $'  # root prompt (no trailing newline, so appears at end of file)

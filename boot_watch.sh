@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Watch latest.log for boot progress after launching Linux on Vita.
+# Watch logs/latest.log for boot progress after launching Linux on Vita.
 # Streams all serial output, injects stage markers, exits on login prompt or timeout.
 # Expects serial_log.py to be running in another terminal.
 set -euo pipefail
 
-LOGFILE="latest.log"
+LOGFILE="logs/latest.log"
 GREEN='\033[32;1m'
 RED='\033[31;1m'
 RESET='\033[0m'
