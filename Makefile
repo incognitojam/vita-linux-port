@@ -1,62 +1,69 @@
 # Vita Linux Port — local orchestration Makefile
-# Runs on macOS, drives remote build (periscope) and Vita deployment
+# Builds locally (macOS with LLVM/Clang, Linux with Bootlin GCC), deploys to Vita
 
 VITA_IP   := 192.168.1.34
 FTP_PORT  := 1337
 CMD_PORT  := 1338
-BUILD_HOST := periscope
-
-CROSS_COMPILE_PATH := /opt/armv7-eabihf--glibc--bleeding-edge-2025.08-1/bin
-REMOTE_KERNEL_DIR  := ~/linux_vita
-REMOTE_MAKE        := export PATH=$(CROSS_COMPILE_PATH):$$PATH && cd $(REMOTE_KERNEL_DIR) && make ARCH=arm CROSS_COMPILE=arm-linux-
 
 LOCAL_KERNEL_DIR := linux_vita
 ZIMAGE           := $(LOCAL_KERNEL_DIR)/arch/arm/boot/zImage
 DTB              := $(LOCAL_KERNEL_DIR)/arch/arm/boot/dts/vita1000.dtb
 
-.PHONY: sync build build-zimage build-dtb dtb pull push boot deploy help watch
+# --- Platform detection ---
 
-BRANCH ?= vita-port-6.12
+UNAME_S := $(shell uname -s)
+
+ifeq ($(UNAME_S),Darwin)
+  # macOS: LLVM/Clang from Homebrew
+  BREW_LLVM   := $(shell brew --prefix llvm)
+  BREW_LLD    := $(shell brew --prefix lld)
+  BREW_FIND   := $(shell brew --prefix findutils)/libexec/gnubin
+  BREW_SED    := $(shell brew --prefix gnu-sed)/libexec/gnubin
+  BREW_LIBELF := $(shell brew --prefix libelf)/include
+  export PATH := $(BREW_FIND):$(BREW_SED):$(BREW_LLVM)/bin:$(BREW_LLD)/bin:$(PATH)
+  KMAKE       := gmake ARCH=arm LLVM=1 HOSTCFLAGS="-Iscripts/macos-include -I$(BREW_LIBELF)"
+  CPP         := clang -E
+  NPROC       := $(shell sysctl -n hw.ncpu)
+else
+  # Linux: Bootlin cross-compiler (arm-linux-* must be on PATH)
+  CROSS_COMPILE ?= arm-linux-
+  KMAKE         := make ARCH=arm CROSS_COMPILE=$(CROSS_COMPILE)
+  CPP           := $(CROSS_COMPILE)cpp
+  NPROC         := $(shell nproc)
+endif
+
+.PHONY: config build build-zimage build-dtb dtb push boot deploy help watch
 
 help:
 	@echo "Targets:"
-	@echo "  sync    — fetch + reset build VM to BRANCH (default: vita-port)"
-	@echo "  build   — compile zImage on build VM"
-	@echo "  dtb     — compile device tree on build VM"
-	@echo "  pull    — fetch built zImage + DTB from build VM"
+	@echo "  config  — copy kernel.config to linux_vita/.config and run olddefconfig"
+	@echo "  build   — compile zImage + DTB locally"
+	@echo "  dtb     — compile device tree only"
 	@echo "  push    — upload zImage + DTB to Vita via FTP"
 	@echo "  boot    — launch Plugin Loader on Vita (boots Linux)"
 	@echo "  watch   — watch an in-progress boot"
-	@echo "  deploy  — full pipeline: sync → build → pull → push → boot"
+	@echo "  deploy  — full pipeline: build → push → boot"
 
-# ------- Sync: fetch + reset to BRANCH + config -------
+# ------- Config -------
 
-sync:
-	@echo "==> Syncing $(BUILD_HOST) to origin/$(BRANCH)..."
-	@ssh $(BUILD_HOST) 'cd $(REMOTE_KERNEL_DIR) && git fetch origin $(BRANCH) && git reset --hard origin/$(BRANCH)'
-	@echo "==> Syncing .config..."
-	@scp -q kernel.config $(BUILD_HOST):$(REMOTE_KERNEL_DIR)/.config
-	@echo "==> Sync complete."
+config:
+	@cp kernel.config $(LOCAL_KERNEL_DIR)/.config
+	@$(KMAKE) -C $(LOCAL_KERNEL_DIR) olddefconfig
 
 # ------- Build -------
 
 build: build-zimage build-dtb
 
 build-zimage:
-	ssh $(BUILD_HOST) '$(REMOTE_MAKE) zImage -j6 2>&1'
+	$(KMAKE) -C $(LOCAL_KERNEL_DIR) zImage -j$(NPROC)
 
 build-dtb dtb:
-	ssh $(BUILD_HOST) 'cd $(REMOTE_KERNEL_DIR) && \
-		$(CROSS_COMPILE_PATH)/arm-linux-cpp \
-			-nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
+	cd $(LOCAL_KERNEL_DIR) && \
+		$(CPP) -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 			-undef -x assembler-with-cpp arch/arm/boot/dts/vita1000.dts | \
-		scripts/dtc/dtc -I dts -O dtb -o arch/arm/boot/dts/vita1000.dtb -'
+		scripts/dtc/dtc -I dts -O dtb -o arch/arm/boot/dts/vita1000.dtb -
 
 # ------- Transfer -------
-
-pull:
-	scp $(BUILD_HOST):$(REMOTE_KERNEL_DIR)/arch/arm/boot/zImage $(ZIMAGE)
-	scp $(BUILD_HOST):$(REMOTE_KERNEL_DIR)/arch/arm/boot/dts/vita1000.dtb $(DTB)
 
 push:
 	curl -s -T $(ZIMAGE) "ftp://$(VITA_IP):$(FTP_PORT)/ux0:/linux/zImage"
@@ -78,4 +85,4 @@ watch:
 
 # ------- Full pipeline -------
 
-deploy: sync build pull push boot
+deploy: build push boot

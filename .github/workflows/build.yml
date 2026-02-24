@@ -9,9 +9,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  BOOTLIN_VERSION: "2025.08-1"
+  BOOTLIN_DIR: armv7-eabihf--glibc--bleeding-edge-2025.08-1
+
 jobs:
   build-linux:
-    name: Linux (GCC cross-compiler)
+    name: Linux (Bootlin GCC)
     runs-on: ubuntu-24.04
 
     steps:
@@ -21,29 +25,45 @@ jobs:
           submodules: true
           fetch-depth: 1
 
+      - name: Cache Bootlin toolchain
+        uses: actions/cache@v4
+        id: toolchain-cache
+        with:
+          path: ${{ github.workspace }}/.toolchains/${{ env.BOOTLIN_DIR }}
+          key: bootlin-${{ env.BOOTLIN_DIR }}
+
+      - name: Install Bootlin toolchain
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "${{ github.workspace }}/.toolchains"
+          curl -fsSL "https://toolchains.bootlin.com/downloads/releases/toolchains/armv7-eabihf/tarballs/${{ env.BOOTLIN_DIR }}.tar.xz" | \
+            tar -xJC "${{ github.workspace }}/.toolchains"
+
       - name: Install dependencies
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q \
-            gcc-arm-linux-gnueabihf \
-            bc flex bison libssl-dev libelf-dev
+          sudo apt-get install -y -q bc flex bison libssl-dev libelf-dev
 
       - name: Configure kernel
         working-directory: linux_vita
         run: |
+          export PATH="${{ github.workspace }}/.toolchains/${{ env.BOOTLIN_DIR }}/bin:$PATH"
           cp ../kernel.config .config
           # No initramfs in CI — rootfs.cpio.xz is not in the repo
           sed -i 's|^CONFIG_INITRAMFS_SOURCE=.*|CONFIG_INITRAMFS_SOURCE=""|' .config
-          make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- olddefconfig
+          make ARCH=arm CROSS_COMPILE=arm-linux- olddefconfig
 
       - name: Build host scripts
         working-directory: linux_vita
-        run: make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- scripts -j$(nproc)
+        run: |
+          export PATH="${{ github.workspace }}/.toolchains/${{ env.BOOTLIN_DIR }}/bin:$PATH"
+          make ARCH=arm CROSS_COMPILE=arm-linux- scripts -j$(nproc)
 
       - name: Build device tree
         working-directory: linux_vita
         run: |
-          arm-linux-gnueabihf-cpp \
+          export PATH="${{ github.workspace }}/.toolchains/${{ env.BOOTLIN_DIR }}/bin:$PATH"
+          arm-linux-cpp \
             -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
             -undef -x assembler-with-cpp arch/arm/boot/dts/vita1000.dts | \
             scripts/dtc/dtc -I dts -O dtb -o arch/arm/boot/dts/vita1000.dtb -
