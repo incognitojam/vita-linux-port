@@ -35,7 +35,8 @@ See [HARDWARE.md](HARDWARE.md) for peripheral addresses, register maps, and pino
 The `Makefile` orchestrates the full workflow from macOS or Linux. Run `make help` for all targets.
 
 - `make deploy` — full pipeline: build → push → boot
-- `make config` — copy `kernel.config` to `linux_vita/.config` and run `olddefconfig`
+- `make config` — apply `vita_defconfig` → `linux_vita/.config`
+- `make savedefconfig` — update `vita_defconfig` from current `.config` (after menuconfig, etc.)
 - `make build` — compile zImage + DTB locally
 - `make dtb` — compile device tree only
 - `make push` — upload zImage + DTB to Vita via FTP
@@ -56,9 +57,9 @@ The `Makefile` orchestrates the full workflow from macOS or Linux. Run `make hel
 
 ### Kernel config
 
-- `kernel.config` (outer repo) is the canonical `.config` — tracked in git
-- `make config` copies it to `linux_vita/.config` and runs `olddefconfig`
-- Edit `kernel.config` locally, then `make config` to apply
+- `vita_defconfig` (`linux_vita/arch/arm/configs/vita_defconfig`) is a minimal defconfig (~100 lines) — only non-default options
+- `make config` applies it via the kernel's defconfig mechanism (toolchain-agnostic)
+- `make savedefconfig` regenerates `vita_defconfig` from the current `.config`
 - Buildroot initramfs (`rootfs.cpio.xz`) must be present in `linux_vita/` — fetch from periscope if needed
 
 ### VitaCompanion (remote control)
