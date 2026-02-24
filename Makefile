@@ -32,7 +32,7 @@ else
   NPROC         := $(shell nproc)
 endif
 
-.PHONY: config build build-zimage build-dtb dtb push boot deploy help watch serial
+.PHONY: config savedefconfig build build-zimage build-dtb dtb push boot deploy help watch serial lsp
 
 help: ## show this help
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | \
@@ -40,9 +40,15 @@ help: ## show this help
 
 # ------- Config -------
 
-config: ## copy kernel.config → .config and run olddefconfig
-	@cp kernel.config $(LOCAL_KERNEL_DIR)/.config
-	@$(KMAKE) -C $(LOCAL_KERNEL_DIR) olddefconfig
+VITA_DEFCONFIG := $(LOCAL_KERNEL_DIR)/arch/arm/configs/vita_defconfig
+
+config: ## apply vita_defconfig → .config
+	@$(KMAKE) -C $(LOCAL_KERNEL_DIR) vita_defconfig
+
+savedefconfig: ## update vita_defconfig from current .config
+	@$(KMAKE) -C $(LOCAL_KERNEL_DIR) savedefconfig
+	@mv $(LOCAL_KERNEL_DIR)/defconfig $(VITA_DEFCONFIG)
+	@echo "vita_defconfig updated ($(shell wc -l < $(VITA_DEFCONFIG)) lines)"
 
 # ------- Build -------
 
@@ -56,6 +62,24 @@ build-dtb dtb: ## compile device tree only
 		$(CPP) -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 			-undef -x assembler-with-cpp arch/arm/boot/dts/vita1000.dts | \
 		scripts/dtc/dtc -I dts -O dtb -o arch/arm/boot/dts/vita1000.dtb -
+
+# ------- LSP / clangd -------
+
+lsp: build ## generate compile_commands.json + .clangd for clangd
+	$(KMAKE) -C $(LOCAL_KERNEL_DIR) compile_commands.json
+	@printf '%s\n' \
+		'CompileFlags:' \
+		'  Remove:' \
+		'    - -mno-fdpic' \
+		'    - -fno-allow-store-data-races' \
+		'    - -fconserve-stack' \
+		'    - -mno-thumb-interwork' \
+		'' \
+		'Diagnostics:' \
+		'  ClangTidy:' \
+		'    Remove: ["*"]' \
+		> $(LOCAL_KERNEL_DIR)/.clangd
+	@echo "LSP ready: $(LOCAL_KERNEL_DIR)/compile_commands.json + .clangd"
 
 # ------- Transfer -------
 

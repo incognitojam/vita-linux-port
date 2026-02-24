@@ -44,7 +44,7 @@ sudo apt install bc flex bison libssl-dev libelf-dev
 From the outer repo (`vita-linux-port/`):
 
 ```bash
-make config   # copy kernel.config → linux_vita/.config, run olddefconfig (first time or after config changes)
+make config   # apply vita_defconfig → linux_vita/.config (first time or after config changes)
 make build    # compile zImage + DTB
 ```
 
@@ -91,9 +91,9 @@ The Vita must be running VitaOS (not Linux) for FTP to be available.
 
 ## Kernel config
 
-- `kernel.config` in the outer repo is the canonical `.config` (tracked in git)
-- `make config` copies it to `linux_vita/.config` and runs `olddefconfig` (which adapts it for whichever compiler is in use — GCC or Clang)
-- Edit `kernel.config` locally, then `make config` to apply
+- `vita_defconfig` (`linux_vita/arch/arm/configs/vita_defconfig`) is a minimal defconfig (~100 lines, only non-default options)
+- `make config` applies it via the kernel's defconfig mechanism (toolchain-agnostic — works with both GCC and Clang)
+- After changing config (e.g. via menuconfig), run `make savedefconfig` to update `vita_defconfig`
 
 ## Buildroot (initramfs)
 
