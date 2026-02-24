@@ -32,7 +32,7 @@ else
   NPROC         := $(shell nproc)
 endif
 
-.PHONY: config build build-zimage build-dtb dtb push boot deploy help watch
+.PHONY: config build build-zimage build-dtb dtb push boot deploy help watch serial
 
 help: ## show this help
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | \
@@ -76,6 +76,9 @@ boot: ## launch Plugin Loader on Vita (boots Linux)
 
 watch: ## watch an in-progress boot
 	@./boot_watch.sh
+
+serial: ## start serial console (Tigard)
+	./serial_log.py
 
 # ------- Full pipeline -------
 
