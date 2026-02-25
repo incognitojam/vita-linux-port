@@ -1,5 +1,6 @@
 # Subrepos (have their own git history)
 refs/
+refs
 
 # Built artifacts
 *.o
@@ -11,6 +12,7 @@ plugin_loader.vpk
 
 # Serial logs
 logs/
+logs
 
 # Claude Code
 .claude/
