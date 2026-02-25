@@ -189,8 +189,9 @@ Instead, power control goes through Ernie (syscon) and an I2C clockgen chip:
 | 27MHz reference clock | P1P40167 clockgen on I2C0 | address `0x69`, register 1 bit 3 |
 
 The in-tree `pwrseq_sd8787.c` driver (which expects direct GPIO) is NOT used.
-Power sequencing is implemented directly in `vita-syscon.c` with a `wlan_power`
-sysfs attribute.
+A custom `mmc-pwrseq` driver (`pwrseq_vita_wlan.c`) handles automatic power-on
+at boot through the standard Linux pwrseq infrastructure. The `wlan_power` sysfs
+attribute in `vita-syscon.c` also remains for manual control.
 
 #### P1P40167 Clockgen (I2C bus 0, address 0x69)
 

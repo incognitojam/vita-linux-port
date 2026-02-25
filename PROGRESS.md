@@ -2,11 +2,12 @@
 
 ## Date: 2026-02-25
 
-## Status: LINUX BOOTS — WiFi WORKING — I2C BUS — eMMC PARTITIONS MOUNTED — REBOOT + POWEROFF WORK
+## Status: LINUX BOOTS — WiFi AUTO-ON + SSH — I2C BUS — eMMC PARTITIONS MOUNTED — REBOOT + POWEROFF WORK
 
 Linux 6.12 boots to a Buildroot shell on the PlayStation Vita with all 4 Cortex-A9 cores,
 framebuffer, touchscreen, buttons, GPIO LEDs, RTC, serial console, SDHCI storage (eMMC readable),
-I2C bus controller, and WiFi networking (Marvell SD8787 via mwifiex).
+I2C bus controller, and WiFi networking (Marvell SD8787 via mwifiex) with SSH access.
+WiFi powers on automatically at boot via the standard Linux `mmc-pwrseq` infrastructure.
 All VitaOS partitions on the eMMC are mountable and readable from Linux.
 `reboot` performs a clean hardware cold reset back to VitaOS with memory card intact.
 `poweroff` powers the device off completely (not a reboot).
@@ -190,15 +191,28 @@ are all controlled indirectly:
   addressed as command byte `N - 128` (so reg 1 → cmd `0x81`, NOT `0x01`)
 
 This means the in-tree `pwrseq_sd8787.c` driver (which expects direct GPIO pins)
-cannot be used. The power sequencing is implemented directly in `vita-syscon.c`.
+cannot be used. A custom `mmc-pwrseq` driver (`pwrseq_vita_wlan.c`) implements the
+power sequencing using the standard Linux pwrseq infrastructure.
 
-**Power-on sequence** (matches VitaOS boot order):
-1. Disable SDIF2 interrupts (prevent premature MMC detect at wrong voltage)
-2. Enable 27MHz WlanBt clock from clockgen via I2C subsystem
-3. Power on wireless via Ernie cmd `0x88A`
-4. De-assert WLANBT reset via Ernie cmd `0x88F`
-5. Full SDHCI controller re-init (pervasive reset cycle, 1.8V I/O voltage)
-6. Trigger MMC core rescan (CMD5 SDIO enumeration)
+**Architecture:**
+- `vita-syscon.c` exports `vita_syscon_wlan_power_on/off()` — shared helpers that
+  wrap the clockgen I2C + Ernie SPI sequences with mutex and rollback on failure
+- `pwrseq_vita_wlan.c` — mmc-pwrseq platform driver that calls the syscon helpers
+  from `pre_power_on` / `post_power_on` / `power_off` callbacks
+- The MMC core calls these automatically during `mmc_power_up()` when `sdhci_add_host()`
+  runs, so WiFi powers on at boot without any userspace action
+
+**Power-on sequence** (via pwrseq callbacks):
+1. `pre_power_on`: Suppress SDHCI interrupts (prevent premature card detect)
+2. `pre_power_on`: Enable 27MHz WlanBt clock from clockgen via I2C subsystem
+3. `pre_power_on`: Power on wireless via Ernie cmd `0x88A`
+4. `pre_power_on`: De-assert WLANBT reset via Ernie cmd `0x88F`
+5. `post_power_on`: Full SDHCI controller re-init (pervasive reset, 1.8V I/O, clocks)
+6. MMC core naturally detects the SDIO card (CMD5 enumeration)
+
+**Probe ordering fix:** `vita_sdif_hosts[]` is set BEFORE `sdhci_add_host()` because
+`sdhci_add_host()` → `mmc_power_up()` → pwrseq `post_power_on` → `sdhci_vita_reinit_host()`
+which needs to find the host in the array.
 
 **SDHCI re-init** (required after WiFi power change):
 The SDHCI controller must be fully torn down and rebuilt after the SD8787 is
@@ -211,9 +225,15 @@ clock setup (div 128 for initial enumeration).
 driver looks up the I2C adapter via `vita,clockgen-i2c = <&i2c0>` phandle in the
 device tree, with deferred probe support if I2C0 hasn't registered yet.
 
-**Usage:** `echo 1 > /sys/devices/platform/soc/e0a00000.spi/spi_master/spi0/spi0.0/wlan_power`
+**Manual usage (sysfs, still works):**
+`echo 1 > /sys/devices/platform/soc/e0a00000.spi/spi_master/spi0/spi0.0/wlan_power`
 then `wpa_supplicant` + `udhcpc` for network access. The reboot notifier automatically
 powers off WiFi/BT before cold reset.
+
+**Boot with SSH:** The Buildroot rootfs includes openssh, wpa_supplicant, and openssl.
+An init script (`S45wifi`) waits for `mlan0` in the background and runs `ifup`.
+SSH is available at `192.168.1.175` after boot (~20s for WiFi, ~140s for sshd due
+to CRNG init delay — see known issues).
 
 **Firmware:** Standard `mrvl/sd8787_uapsta.bin` from linux-firmware, placed in rootfs
 at `/lib/firmware/mrvl/`. The Vita's encrypted firmware (`wlanbt_robin_img_ax.skprx`)
@@ -288,8 +308,12 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - **Filesystem support** — CONFIG_EXFAT_FS=y, CONFIG_VFAT_FS=y, CONFIG_BLK_DEV_LOOP=y
 - **I2C bus** — I2C0 adapter registered (`/dev/i2c-0`), polling-based driver.
   Used by syscon for clockgen access (WiFi 27MHz clock, audio clock, motion clock).
-- **WiFi** — Marvell SD8787 via mwifiex SDIO driver. Power sequencing through Ernie
-  syscon commands + I2C clockgen. Controlled via `wlan_power` sysfs attribute.
+- **WiFi** — Marvell SD8787 via mwifiex SDIO driver. **Automatic power-on at boot**
+  via `mmc-pwrseq` infrastructure (`pwrseq_vita_wlan.c`). Also controllable via
+  `wlan_power` sysfs attribute.
+- **SSH over WiFi** — openssh + wpa_supplicant in rootfs, auto-connects on boot.
+  Available at 192.168.1.175 (ed25519 key auth). ~20s for WiFi, ~140s for sshd
+  (blocked by CRNG init — needs high-res clocksource for jitterentropy).
 - **Reboot + Poweroff** — `reboot` cold-resets to VitaOS, `poweroff` powers off completely.
   Both clean up peripherals (MSIF, game card, WiFi) before acting.
 - **Debug infrastructure** — debugfs (auto-mounted), dynamic debug (687 callsites),
@@ -320,6 +344,8 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - Added 4 SDIF device tree nodes (mmc@e0b00000 through mmc@e0c20000) with interrupt properties
 - Added I2C0/I2C1 device tree nodes with IRQs (GIC_SPI 110/111) and reset cells (68/69)
 - Added `vita,clockgen-i2c = <&i2c0>` phandle on syscon SPI node
+- Added `wlan-pwrseq` node (`compatible = "vita,pwrseq-wlan"`) with `vita,syscon` phandle
+- Added `mmc-pwrseq = <&wlan_pwrseq>` to sdif2 node
 
 ### `arch/arm/boot/dts/vita1000.dts`
 - Added `console=ttyS0,115200` to bootargs
@@ -337,11 +363,21 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 
 ### `drivers/mmc/host/sdhci-vita.c` (NEW)
 - SDHCI platform driver for Vita's SDIF controllers
-- Tracks SDIF hosts for cross-driver access
-- Exports `sdhci_vita_reinit_host()` and `sdhci_vita_trigger_rescan()` for WiFi
-  power sequencing — full pervasive reset cycle, I/O voltage config, SDHCI software
-  reset, and MMC core rescan
+- Tracks SDIF hosts for cross-driver access (vita_sdif_hosts[] set before sdhci_add_host)
+- Exports `sdhci_vita_reinit_host()`, `sdhci_vita_suppress_irqs()`, and
+  `sdhci_vita_trigger_rescan()` for WiFi power sequencing — full pervasive reset
+  cycle, I/O voltage config, SDHCI software reset, and MMC core rescan
 - Bus-specific OCR enforcement and SDIF2 power behavior for SD8787 SDIO
+
+### `drivers/mmc/core/pwrseq_vita_wlan.c` (NEW)
+- mmc-pwrseq driver for automatic WiFi power-on at boot
+- Implements pre_power_on (suppress IRQs + power on via syscon helpers),
+  post_power_on (SDHCI reinit), and power_off callbacks
+- Reads bus index from MMC host DT node at runtime (no hardcoded addresses)
+- Probes via `vita,pwrseq-wlan` compatible, looks up syscon via DT phandle
+
+### `drivers/mmc/core/Kconfig` + `Makefile`
+- Added PWRSEQ_VITA_WLAN config (bool, depends on OF + MFD_VITA_SYSCON + MMC_SDHCI_VITA)
 
 ### `drivers/mmc/host/Kconfig` + `Makefile`
 - Added MMC_SDHCI_VITA config and build entries
@@ -390,12 +426,28 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - `CONFIG_DETECT_HUNG_TASK=y` — hung task warnings (120s timeout)
 - `CONFIG_UNWINDER_FRAME_POINTER=y` — better stack traces in panics/oopses
 - `CONFIG_I2C=y` + `CONFIG_I2C_CHARDEV=y` + `CONFIG_I2C_VITA=y` — I2C subsystem + `/dev/i2c-*` + Vita bus driver
+- `CONFIG_PWRSEQ_VITA_WLAN=y` — mmc-pwrseq driver for automatic WiFi power-on at boot
 
 ## Buildroot rootfs overlay (on periscope: `~/buildroot/rootfs-overlay/`)
 - `etc/fstab` — standard mounts + debugfs + Vita eMMC partitions (ro, noauto)
 - `etc/init.d/S05vita` — creates `/dev/vita/*` symlinks to eMMC partitions
+- `etc/init.d/S45wifi` — background script: waits for mlan0 (up to 30s), then `ifup mlan0`
+- `etc/network/interfaces` — loopback auto, mlan0 manual (DHCP + wpa_supplicant pre-up)
+- `etc/wpa_supplicant.conf` — WiFi credentials
+- `etc/ssh/ssh_host_*_key` — pre-generated SSH host keys (0600 permissions)
+- `root/.ssh/authorized_keys` — ed25519 public keys for SSH access
 - `lib/firmware/mrvl/sd8787_uapsta.bin` — Marvell SD8787 WiFi firmware (from linux-firmware)
 - `mnt/{os0,vs0,sa0,tm0,vd0,ud0,pd0,ur0}/` — mountpoint directories
+
+## Known issues
+- **CRNG init takes ~140s** — The kernel's CRNG needs entropy to initialize, but the
+  Vita's `sched_clock` is only 100Hz (10ms resolution). `CONFIG_CRYPTO_JITTERENTROPY`
+  fails with "host not compliant with requirements". sshd blocks until CRNG is ready
+  because `ssh-keygen -A` reads `/dev/urandom`. Fix: implement a high-resolution
+  clocksource using the Vita's hardware timers (ARM TWD or pervasive timer).
+- **DHCP first attempt fails** — udhcpc broadcasts discover before WPA handshake
+  completes, gets no lease, forks to background. Eventually succeeds on retry.
+  Cosmetic issue only — WiFi works within ~20s of kernel boot.
 
 ## Reboot / Power Management — SOLVED (reboot 2026-02-22, poweroff 2026-02-25)
 
@@ -482,13 +534,18 @@ command 0x89B before the reset fixes this.
 - `linux_vita/drivers/mfd/vita-syscon.c` — Reboot notifier: powers off peripherals
   (MSIF 0x89B, game card 0x888, WiFi/BT if enabled), then sends poweroff (0x00C0
   with inverted mode) for SYS_POWER_OFF/SYS_HALT or cold reset (0x0801) for
-  SYS_RESTART, with cold reset as fallback if poweroff fails. Also: WiFi power
-  sequencing via Ernie commands (0x88A, 0x88F) and I2C clockgen
-  (P1P40167 at 0x69) via `i2c_transfer()`, `wlan_power` sysfs attribute.
+  SYS_RESTART, with cold reset as fallback if poweroff fails. Also: exported
+  `vita_syscon_wlan_power_on/off()` helpers with mutex + rollback (used by both
+  the pwrseq driver and sysfs), `wlan_power` sysfs attribute, I2C clockgen
+  (P1P40167 at 0x69) via `i2c_transfer()`.
 - `linux_vita/include/linux/mfd/vita-syscon.h` — Added `reboot_nb`, `wlan_power`,
-  and `clockgen_i2c` to `struct vita_syscon`, added reset type constants
+  `wlan_mutex`, and `clockgen_i2c` to `struct vita_syscon`, added reset type
+  constants, declared WLAN power helpers and sdhci-vita exports
 
 ## Next steps
+- **High-res clocksource** — Implement a proper clocksource using the Vita's ARM TWD
+  or pervasive timers. Would fix jitterentropy (fast CRNG init → fast sshd startup)
+  and improve kernel timing overall.
 - **Bluetooth** — SD8787 has combined WiFi/BT. Enable `CONFIG_BT`, `CONFIG_BT_MRVL`,
   `CONFIG_BT_MRVL_SDIO`. Firmware already loaded. Power sequencing is shared with WiFi.
 - **Audio pipeline** — Requires pervasive clock framework, I2S driver (needs RE of
