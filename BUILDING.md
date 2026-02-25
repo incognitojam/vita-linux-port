@@ -83,8 +83,8 @@ make boot     # launch Linux on Vita, stream serial output
 Or manually:
 
 ```bash
-curl -s -T linux_vita/arch/arm/boot/zImage "ftp://192.168.1.34:1337/ux0:/linux/zImage"
-curl -s -T linux_vita/arch/arm/boot/dts/vita1000.dtb "ftp://192.168.1.34:1337/ux0:/linux/vita1000.dtb"
+curl -s -T linux_vita/arch/arm/boot/zImage "ftp://<VITA_IP>:1337/ux0:/linux/zImage"
+curl -s -T linux_vita/arch/arm/boot/dts/vita1000.dtb "ftp://<VITA_IP>:1337/ux0:/linux/vita1000.dtb"
 ```
 
 The Vita must be running VitaOS (not Linux) for FTP to be available.

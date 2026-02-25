@@ -11,7 +11,7 @@ See [BUILDING.md](BUILDING.md), [PROGRESS.md](PROGRESS.md), [HARDWARE.md](HARDWA
 ## Vita
 
 - PCH-1103 (Vita 1000, OLED), FW 3.65 + enso, 16GB Sony memory card
-- IP: `192.168.1.34` — FTP on 1337, VitaCompanion TCP on 1338 (only available in VitaOS)
+- IP: resolved from `ssh -G vita` (~/.ssh/config) — FTP on 1337, VitaCompanion TCP on 1338 (only available in VitaOS)
 - Files: `ux0:/linux/zImage`, `ux0:/linux/vita1000.dtb`, `ux0:/baremetal/payload.bin`
 - SD2Vita 256GB not yet working (needs YAMT plugin)
 - tai config: `ur0:tai/config.txt`
@@ -37,7 +37,7 @@ See [BUILDING.md](BUILDING.md), [PROGRESS.md](PROGRESS.md), [HARDWARE.md](HARDWA
 
 ## VitaCompanion
 
-TCP command interface: `echo "cmd" | nc 192.168.1.34 1338`
+TCP command interface: `echo "cmd" | nc <VITA_IP> 1338`
 - `launch PLGINLDR0` — launch Plugin Loader (boots Linux)
 - `destroy` — kill all running apps
 - `reboot` — cold reboot

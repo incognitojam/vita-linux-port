@@ -240,7 +240,7 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - Model: PCH-1103 (Vita 1000)
 - Firmware: 3.65 with enso
 - UART via Tigard at 115200 baud (`/dev/tty.usbserial-TG110fda0`)
-- FTP via VitaShell at `ftp://192.168.1.34:1337`
+- FTP via VitaShell at `ftp://<VITA_IP>:1337`
 
 ### Files on Vita
 - `ux0:data/tai/kplugin.skprx` — baremetal-loader_363.skprx

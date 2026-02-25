@@ -1,7 +1,10 @@
 # Vita Linux Port — local orchestration Makefile
 # Builds locally (macOS with LLVM/Clang, Linux with Bootlin GCC), deploys to Vita
 
-VITA_IP   := 192.168.1.34
+VITA_IP   := $(shell ssh -G vita 2>/dev/null | awk '/^hostname / {print $$2}')
+ifeq ($(VITA_IP),)
+  $(error Could not resolve VITA_IP — add "Host vita" to ~/.ssh/config)
+endif
 FTP_PORT  := 1337
 CMD_PORT  := 1338
 
