@@ -2,13 +2,14 @@
 
 ## Date: 2026-02-25
 
-## Status: LINUX BOOTS — WiFi WORKING — eMMC PARTITIONS MOUNTED — REBOOT WORKS
+## Status: LINUX BOOTS — WiFi WORKING — eMMC PARTITIONS MOUNTED — REBOOT + POWEROFF WORK
 
 Linux 6.12 boots to a Buildroot shell on the PlayStation Vita with all 4 Cortex-A9 cores,
 framebuffer, touchscreen, buttons, GPIO LEDs, RTC, serial console, SDHCI storage (eMMC readable),
 and WiFi networking (Marvell SD8787 via mwifiex).
 All VitaOS partitions on the eMMC are mountable and readable from Linux.
 `reboot` performs a clean hardware cold reset back to VitaOS with memory card intact.
+`poweroff` powers the device off completely (not a reboot).
 
 ## The L2 Cache Fix
 
@@ -267,6 +268,8 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - **Filesystem support** — CONFIG_EXFAT_FS=y, CONFIG_VFAT_FS=y, CONFIG_BLK_DEV_LOOP=y
 - **WiFi** — Marvell SD8787 via mwifiex SDIO driver. Power sequencing through Ernie
   syscon commands + I2C clockgen. Controlled via `wlan_power` sysfs attribute.
+- **Reboot + Poweroff** — `reboot` cold-resets to VitaOS, `poweroff` powers off completely.
+  Both clean up peripherals (MSIF, game card, WiFi) before acting.
 - **Debug infrastructure** — debugfs (auto-mounted), dynamic debug (687 callsites),
   MMC debug, SysRq over serial, printk timestamps, softlockup/hung task detection,
   frame pointer unwinder for clean stack traces
@@ -359,35 +362,67 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - `lib/firmware/mrvl/sd8787_uapsta.bin` — Marvell SD8787 WiFi firmware (from linux-firmware)
 - `mnt/{os0,vs0,sa0,tm0,vd0,ud0,pd0,ur0}/` — mountpoint directories
 
-## Reboot / Power Management (2026-02-22) — SOLVED
+## Reboot / Power Management — SOLVED (reboot 2026-02-22, poweroff 2026-02-25)
 
 ### Solution
 
-Cold reset via direct SPI command `0x0801` to Ernie. Before issuing the reset,
-power off the memory card (MSIF, cmd `0x89B`) and game card slot (cmd `0x888`)
-so VitaOS finds them in a clean state on the next boot.
+**Reboot:** Cold reset via direct SPI command `0x0801` to Ernie.
 
-Implementation: reboot notifier in `vita-syscon.c` with priority 255.
+**Poweroff:** Direct SPI command `0x00C0` to Ernie with type=0 (poweroff), mode=0x2
+(software-initiated). The mode bytes must be **bit-inverted** in the SPI payload.
 
-### Key Discovery: Raw Ernie Commands
+Before issuing either command, power off the memory card (MSIF, cmd `0x89B`),
+game card slot (cmd `0x888`), and WiFi/BT if enabled. Implementation: reboot
+notifier in `vita-syscon.c` with priority 255.
+
+### Key Discovery: Ernie Power Mode Protocol
 
 The TrustZone Secure Monitor (SMC 0x11A) is the normal path for power commands,
 but it can't function after Linux reconfigures the GIC and SPI controller.
-Analysis of the Monitor's handler (henkaku wiki `SceSyscon#sceSysconSetPowerModeForDriver`)
-revealed it sends **different raw SPI commands** than the VitaOS kernel-level
-abstraction (cmd 0x0C). The raw Ernie commands are:
+Reverse-engineering the VitaOS `syscon.skprx` (disassembled from decrypted os0
+dump) and the henkaku wiki documentation of `sceSysconSetPowerModeForDriver(type, mode)`
+revealed the raw SPI commands the TZ Monitor sends to Ernie:
 
-| Command | Description | Wire format `{cmd_lo, cmd_hi, args_size, args}` | Status |
-|---------|-------------|--------------------------------------------------|--------|
-| 0x0801 | Cold reset | `{0x01, 0x08, 0x01, 0x00}` | **Works** |
-| 0x00C0 | Power off/suspend/soft-reset | `{0xC0, 0x00, 0x05, type, ~mode...}` | Rejected (0x3B) |
-| 0x00C1 | Ext boot / update mode | `{0xC1, 0x00, 0x02, 0x00}` | Untested |
+| Command | Description | Wire format `{cmd_lo, cmd_hi, len, data...}` | Status |
+|---------|-------------|-----------------------------------------------|--------|
+| 0x0801 | Cold reset | `{0x01, 0x08, 0x02, 0x00}` | **Working** |
+| 0x00C0 | Power off (type=0, mode=0x2) | `{0xC0, 0x00, 0x05, 0x00, 0xFD, 0xFF, 0x00}` | **Working** |
+| 0x00C0 | Suspend (type=1) | `{0xC0, 0x00, 0x05, 0x01, ~mode...}` | Untested |
+| 0x00C0 | Soft reset (type=17) | `{0xC0, 0x00, 0x05, 0x11, ~mode...}` | Untested |
+| 0x00C1 | Ext boot / update mode | `{0xC1, 0x00, 0x02, 0x00/0x01}` | Untested |
 | 0x00C2 | Hibernate | `{0xC2, 0x00, 0x02, 0x5A}` | Untested |
+
+The 0x00C0 command data format is `{type, (~mode) & 0xFF, (~mode >> 8) & 0xFF, (mode >> 16) & 0xFF}`.
+The bit-inversion of the mode bytes is critical — earlier experiments sent the mode
+value raw, causing Ernie to misparse the packet and fall back to cold reset behavior.
 
 The VitaOS-level command 0x0C is rejected with result 0x3F — this is a
 higher-level abstraction that goes through `ksceSysconCmdExec` with flags.
 The raw commands 0x0801 and 0x00C0+ are what the TrustZone Monitor actually
 sends to Ernie on the wire.
+
+### Poweroff Investigation (2026-02-25)
+
+Before the fix, `poweroff` in Linux printed "Requesting system poweroff" but the
+device cold-rebooted into VitaOS. The reboot notifier handled all actions identically,
+always sending the cold reset command (0x0801).
+
+**What was tried (and failed):**
+
+| # | Approach | Result |
+|---|----------|--------|
+| 1 | SPI cmd `0x00C0` with raw mode bytes | Instant reboot (mode bytes not inverted) |
+| 2 | SPI cmd `0x8B0` (EnableHibernateIO) + `0x00C0` | Instant reboot |
+| 3 | SPI cmd `0x00C0` with VitaOS mode value 0x8102 (raw) | Instant reboot |
+| 4 | SPI cmd `0x00C1` (ErnieShutdown) data=0 | Silently ignored |
+| 5 | SMC 0x11A via inline `smc #0` | No effect (TZ Monitor broken) |
+
+**What fixed it:** Disassembling the decrypted `syscon.skprx` from the os0 dump
+revealed the `sceSysconSetPowerModeForDriver` SMC wrapper at offset `0x3bcc`,
+which passes type/mode straight through to SMC 0x11A. The henkaku wiki documents
+that the SceSysconTzs handler constructs the SPI packet with **bit-inverted mode
+bytes**. Applying this inversion (`~mode` in bytes 1-2 of the data payload)
+made Ernie accept the poweroff command.
 
 ### Memory Card Issue
 
@@ -396,15 +431,6 @@ memory card (MSIF) controller. Without explicitly powering off the memory
 card before the reset, VitaOS boots into a state where the card is visible
 but unmountable (capacity shows "-", apps missing). Powering off via syscon
 command 0x89B before the reset fixes this.
-
-### Failed Approaches
-
-| Approach | Result |
-|----------|--------|
-| Direct SPI cmd 0x0C (COLD_RESET) | Ernie rejects with result 0x3F |
-| Direct SPI cmd 0x00C0 (POWEROFF) | Ernie rejects with result 0x3B |
-| SMC 0x11A (COLD_RESET) | Returns without resetting, RCU stall |
-| SMC 0x11A (SOFT_RESET) | Hangs forever inside Monitor |
 
 ### Architecture Notes
 
@@ -418,11 +444,12 @@ command 0x89B before the reset fixes this.
 
 ### Files Modified
 
-- `linux_vita/drivers/mfd/vita-syscon.c` — Reboot notifier sends syscon 0x89B
-  (MSIF power off), 0x888 (game card power off), then 0x0801 (cold reset).
-  WiFi power sequencing via Ernie commands (0x88A, 0x88F) and raw I2C0 clockgen
-  access (P1P40167 at 0x69). Exposes `wlan_power` sysfs attribute. Reboot notifier
-  also powers off WiFi/BT if enabled.
+- `linux_vita/drivers/mfd/vita-syscon.c` — Reboot notifier: powers off peripherals
+  (MSIF 0x89B, game card 0x888, WiFi/BT if enabled), then sends poweroff (0x00C0
+  with inverted mode) for SYS_POWER_OFF/SYS_HALT or cold reset (0x0801) for
+  SYS_RESTART, with cold reset as fallback if poweroff fails. Also: WiFi power
+  sequencing via Ernie commands (0x88A, 0x88F) and raw I2C0 clockgen access
+  (P1P40167 at 0x69), `wlan_power` sysfs attribute.
 - `linux_vita/include/linux/mfd/vita-syscon.h` — Added `reboot_nb` and `wlan_power`
   to `struct vita_syscon`, added reset type constants
 
