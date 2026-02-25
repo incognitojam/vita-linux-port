@@ -28,7 +28,8 @@ Codename: **Kermit**
 | DMAC4 | `0xE0400000` | - | Not started |
 | DMAC5 | `0xE0410000` | - | Not started |
 | Bigmac (crypto) | `0xE0050000` | - | Not started |
-| I2C0 | `0xE0500000` | 0x1000 | Raw MMIO (clockgen access for WiFi) |
+| I2C0 | `0xE0500000` | 0x1000 | **Working** (i2c-vita polling driver) |
+| I2C1 | `0xE0510000` | 0x1000 | DT node present, disabled (no powered consumers on PCH-1000) |
 | MSIF (MemoryStick) | `0xE0900000` | - | Not started (needs auth) |
 | SDIF0 (eMMC) | `0xE0B00000` | 0x1000 | Working (SDHCI, ADMA) |
 | SDIF1 (GameCard) | `0xE0C00000` | 0x1000 | Driver works, card init fails |
@@ -203,7 +204,36 @@ CY27040-compatible clock generator. Write protocol uses command byte = register 
 | 3 | WlanBtClk enable (27MHz buffered oscillator) |
 | 4 | AudioClk enable |
 
-Accessed via raw MMIO I2C (base `0xE0500000`) — no I2C subsystem driver yet.
+Accessed via the I2C subsystem (`i2c-vita` driver). The syscon driver looks up the
+I2C adapter via `vita,clockgen-i2c = <&i2c0>` DT phandle.
+
+### I2C Devices (confirmed via bus scan)
+
+From `i2cdetect -y -r 0` on hardware (addresses are 7-bit):
+
+| Bus | Address (7-bit) | Wiki (8-bit) | Device | Status |
+|-----|----------------|-------------|--------|--------|
+| 0 | 0x1A | 0x34 | WM1803E audio codec | Present, powered down (needs AudioClk from clockgen bit 4) |
+| 0 | 0x4A | 0x94 | Unknown | Present, has data in regs 0x00-0x1F. Wiki says "Unknown" |
+| 0 | 0x69 | 0xD2 | P1P40167 clockgen | **Working** — WiFi/audio clock control |
+
+Expected but not detected on I2C0 (need power/clock enablement):
+
+| Bus | Address (7-bit) | Wiki (8-bit) | Device | Notes |
+|-----|----------------|-------------|--------|-------|
+| 0 | 0x3A | 0x74 | Camera sensor (Camera0) | Not detected (needs power?) |
+
+Expected but not detected on I2C1 (bus scan empty — no powered consumers on PCH-1000):
+
+| Bus | Address (7-bit) | Wiki (8-bit) | Device | Notes |
+|-----|----------------|-------------|--------|-------|
+| 1 | 0x0C | 0x18 | Motion sensor (Barkley) | Not detected (needs power?), also accessed via syscon |
+| 1 | 0x38 | 0x70 | ADV7533 HDMI (Vita TV only) | Not detected, N/A on PCH-1000 |
+| 1 | 0x3A | 0x74 | Camera sensor (Camera1) | Not detected (needs power?) |
+| 1 | 0x3D | 0x7A | ADV7533 HDMI main | Not detected, N/A on PCH-1000 |
+| 1 | 0x3E | 0x7C | ADV7533 HDMI CEC | Not detected, N/A on PCH-1000 |
+| 1 | 0x3F | 0x7E | ADV7533 HDMI EDID | Not detected, N/A on PCH-1000 |
+| 1 | 0x64 | 0xC8 | LCD brightness | Not detected (needs power?) |
 
 #### SDHCI Reinit After Power Change
 
