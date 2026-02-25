@@ -263,7 +263,7 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 ## Environment
 
 ### Local (macOS or Linux)
-- `linux_vita/` — kernel repo, git submodule (branch `vita-port-6.12`, based on Linux 6.12)
+- `linux_vita/` — kernel repo, git submodule (Linux 6.12 + Vita patches)
 - `vita-baremetal-linux-loader/` — loader repo, git submodule
 - `refs/` — reference repos (vita-libbaremetal, vita-headers, psvcmd56, etc.)
 - Build locally with LLVM/Clang (macOS) or Bootlin GCC cross-compiler (Linux)

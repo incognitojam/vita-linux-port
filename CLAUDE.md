@@ -4,9 +4,13 @@ See [BUILDING.md](BUILDING.md), [PROGRESS.md](PROGRESS.md), [HARDWARE.md](HARDWA
 
 ## Layout
 
-- `linux_vita/` — kernel (submodule, branch `vita-port-6.12`, Linux 6.12 + xerpi's Vita patches)
-- `vita-baremetal-linux-loader/` — loader (submodule, branch `vita-port`)
+- `linux_vita/` — kernel (submodule, Linux 6.12 + xerpi's Vita patches)
+- `vita-baremetal-linux-loader/` — loader (submodule)
 - `refs/` — reference repos (vita-headers, psvcmd56, vita-libbaremetal, xerpi-linux-vita, StorageMgr, etc.)
+
+**Branches:** The dev branch for each submodule may change over time. Check
+`.gitmodules` for the configured branch, or `git -C <submodule> branch -r` to
+see the remote default. Don't assume a hardcoded branch name — verify it.
 
 ## Vita
 
@@ -31,9 +35,27 @@ See [BUILDING.md](BUILDING.md), [PROGRESS.md](PROGRESS.md), [HARDWARE.md](HARDWA
 2. `make deploy` (or `make build`, `make dtb`, `make push`, `make boot` individually)
 3. After boot: `./vita_cmd.sh "command"` to run commands on Vita over serial
 4. Reboot to VitaOS: `./vita_cmd.sh "reboot"` — cold reset, vitacompanion auto-starts
-5. Commit: `cd linux_vita && git add <specific files> && git commit -m "..." && git push origin vita-port-6.12`
-   - **Never `git add -A`** — macOS case-insensitive FS creates spurious diffs
-   - Run `fix_case_sensitivity.sh` once after cloning
+
+### Git workflow
+
+**Branching:** In a worktree the outer repo (`vita-linux-port`) is typically on a
+feature branch. Submodules will be checked out at a detached commit. When doing
+work in a submodule, create a branch (matching the outer repo's branch name, or a
+descriptive name for the work) and push to that branch. Never push directly to the
+submodule's main dev branch without permission.
+
+**Commits in `linux_vita`:** Follow Linux kernel commit conventions (subject prefix
+like `arm: vita:` or `mmc: sdhci-vita:`, imperative mood, concise subject, blank
+line, explanatory body). On a working branch commits can be messy, but clean them
+up (interactive rebase / fixup) before merge.
+
+**PRs:** Create PRs against the outer `vita-linux-port` repo, bumping submodule
+refs as needed, so CI can run. Update documentation in the outer repo as part of
+the PR.
+
+**Other rules:**
+- **Never `git add -A`** in `linux_vita/` — macOS case-insensitive FS creates spurious diffs
+- Run `fix_case_sensitivity.sh` once after cloning
 
 ## VitaCompanion
 

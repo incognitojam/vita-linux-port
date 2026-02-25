@@ -62,7 +62,7 @@ kernel, uploads it to the Vita over FTP, and boots Linux.
 
 | Path | Description |
 |------|-------------|
-| `linux_vita/` | Kernel source (git submodule, branch `vita-port-6.12`) |
+| `linux_vita/` | Kernel source (git submodule) |
 | `vita-baremetal-linux-loader/` | Baremetal loader (git submodule) |
 | `Makefile` | Build/deploy/boot orchestration |
 | `serial_log.py` | Serial console with logging |
