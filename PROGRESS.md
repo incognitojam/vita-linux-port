@@ -2,11 +2,12 @@
 
 ## Date: 2026-02-25
 
-## Status: LINUX BOOTS — WiFi AUTO-ON + SSH — I2C BUS — eMMC PARTITIONS MOUNTED — REBOOT + POWEROFF WORK
+## Status: LINUX BOOTS — HIGH-RES CLOCKS — WiFi AUTO-ON + SSH — I2C BUS — eMMC PARTITIONS MOUNTED — REBOOT + POWEROFF WORK
 
 Linux 6.12 boots to a Buildroot shell on the PlayStation Vita with all 4 Cortex-A9 cores,
 framebuffer, touchscreen, buttons, GPIO LEDs, RTC, serial console, SDHCI storage (eMMC readable),
-I2C bus controller, and WiFi networking (Marvell SD8787 via mwifiex) with SSH access.
+I2C bus controller, WiFi networking (Marvell SD8787 via mwifiex) with SSH access, and a
+high-resolution 144 MHz clocksource (ARM Cortex-A9 Global Timer).
 WiFi powers on automatically at boot via the standard Linux `mmc-pwrseq` infrastructure.
 All VitaOS partitions on the eMMC are mountable and readable from Linux.
 `reboot` performs a clean hardware cold reset back to VitaOS with memory card intact.
@@ -175,6 +176,44 @@ devices (real: `0x000D`, ghost: `0x800E`). Note: `i2cdetect` must use `-r` flag
 (read mode) — the default quick-write mode doesn't reliably trigger NACK on
 this controller.
 
+### ARM Global Timer / High-Res Clocksource — WORKING (2026-02-25)
+
+Enabled the ARM Cortex-A9 Global Timer at `0x1A000200` (SCU base + 0x200) as the
+kernel's clocksource and `sched_clock`. This was previously commented out in the
+device tree since xerpi's original port — simply uncommenting the DTS node was
+sufficient, no new driver code needed.
+
+**Before:** `sched_clock` was jiffies-based at 100 Hz (10ms resolution). The kernel's
+CRNG took ~140 seconds to initialize because `jitterentropy` couldn't measure CPU
+timing jitter at such coarse resolution, and `add_interrupt_randomness` entropy was
+negligible. sshd blocked on CRNG for the entire duration.
+
+**After:** `sched_clock` runs at 144 MHz (6ns resolution, 64-bit counter). CRNG
+initializes in ~10 seconds. sshd is available within ~12 seconds of kernel boot.
+
+| Metric | Before | After |
+|--------|--------|-------|
+| `sched_clock` resolution | 10,000,000 ns (10ms) | 6 ns |
+| `sched_clock` width | 32-bit | 64-bit |
+| Clocksource | jiffies (100 Hz) | arm_global_timer (144 MHz) |
+| CRNG init | ~140 seconds | ~10 seconds |
+| sshd available | ~160s after kernel boot | ~12s after kernel boot |
+| Delay loop | calibrated (574 BogoMIPS) | timer-based (288 BogoMIPS) |
+
+**Configuration:**
+- DTS node: `global_timer@1a000200` with `compatible = "arm,cortex-a9-global-timer"`,
+  clocked from `refclk144mhz` (144 MHz fixed clock), PPI 11 interrupt
+- `CONFIG_ARM_GLOBAL_TIMER=y` + `CONFIG_CLKSRC_ARM_GLOBAL_TIMER_SCHED_CLOCK=y`
+  (already selected by `ARCH_VITA` Kconfig)
+- `CONFIG_CRYPTO_JITTERENTROPY=y` added to defconfig (provides CPU jitter entropy
+  source for fast CRNG seeding)
+
+**Why it was commented out:** Unknown — xerpi's original port had it disabled. The
+TWD (private timer) at `0x1A000600` uses the same 144 MHz clock and has worked since
+the original port, so there was no hardware reason for the global timer to fail. It
+may have been disabled due to the baremetal loader's boot sequence, but the current
+loader's L1+L2 cache flush before jumping to Linux ensures the timer state is clean.
+
 ### WiFi / SDIF2 — WORKING (2026-02-25)
 
 The Marvell SD8787 WiFi/BT chip is on SDIF2. WiFi is fully working with the
@@ -291,7 +330,7 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 
 ## What works
 - Full boot to Buildroot login shell
-- All 4 Cortex-A9 CPUs (574 BogoMIPS per core)
+- All 4 Cortex-A9 CPUs (288 BogoMIPS per core, timer-calculated)
 - 480MB RAM available (of 512MB total)
 - Framebuffer: 960x544 OLED (simple-framebuffer, fb0)
 - UART serial console (ttyS0 @ 115200)
@@ -306,14 +345,16 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - **eMMC auto-mount** — `S05vita` init script creates `/dev/vita/*` symlinks, fstab
   provides `mount /mnt/ur0` etc. (read-only, noauto)
 - **Filesystem support** — CONFIG_EXFAT_FS=y, CONFIG_VFAT_FS=y, CONFIG_BLK_DEV_LOOP=y
+- **High-res clocksource** — ARM Cortex-A9 Global Timer at 144 MHz, 6ns resolution,
+  64-bit counter. Provides `sched_clock` and system clocksource. CRNG initializes
+  in ~10s (was ~140s with jiffies-only sched_clock).
 - **I2C bus** — I2C0 adapter registered (`/dev/i2c-0`), polling-based driver.
   Used by syscon for clockgen access (WiFi 27MHz clock, audio clock, motion clock).
 - **WiFi** — Marvell SD8787 via mwifiex SDIO driver. **Automatic power-on at boot**
   via `mmc-pwrseq` infrastructure (`pwrseq_vita_wlan.c`). Also controllable via
   `wlan_power` sysfs attribute.
 - **SSH over WiFi** — openssh + wpa_supplicant in rootfs, auto-connects on boot.
-  Available at 192.168.1.175 (ed25519 key auth). ~20s for WiFi, ~140s for sshd
-  (blocked by CRNG init — needs high-res clocksource for jitterentropy).
+  Available at 192.168.1.175 (ed25519 key auth). ~12s for sshd, ~20s for WiFi.
 - **Reboot + Poweroff** — `reboot` cold-resets to VitaOS, `poweroff` powers off completely.
   Both clean up peripherals (MSIF, game card, WiFi) before acting.
 - **Debug infrastructure** — debugfs (auto-mounted), dynamic debug (687 callsites),
@@ -346,6 +387,7 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - Added `vita,clockgen-i2c = <&i2c0>` phandle on syscon SPI node
 - Added `wlan-pwrseq` node (`compatible = "vita,pwrseq-wlan"`) with `vita,syscon` phandle
 - Added `mmc-pwrseq = <&wlan_pwrseq>` to sdif2 node
+- Enabled `global_timer@1a000200` node (ARM Cortex-A9 Global Timer, 144 MHz clocksource)
 
 ### `arch/arm/boot/dts/vita1000.dts`
 - Added `console=ttyS0,115200` to bootargs
@@ -427,6 +469,7 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - `CONFIG_UNWINDER_FRAME_POINTER=y` — better stack traces in panics/oopses
 - `CONFIG_I2C=y` + `CONFIG_I2C_CHARDEV=y` + `CONFIG_I2C_VITA=y` — I2C subsystem + `/dev/i2c-*` + Vita bus driver
 - `CONFIG_PWRSEQ_VITA_WLAN=y` — mmc-pwrseq driver for automatic WiFi power-on at boot
+- `CONFIG_CRYPTO_JITTERENTROPY=y` — CPU jitter entropy source (needs high-res clocksource)
 
 ## Buildroot rootfs overlay (on periscope: `~/buildroot/rootfs-overlay/`)
 - `etc/fstab` — standard mounts + debugfs + Vita eMMC partitions (ro, noauto)
@@ -440,11 +483,9 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - `mnt/{os0,vs0,sa0,tm0,vd0,ud0,pd0,ur0}/` — mountpoint directories
 
 ## Known issues
-- **CRNG init takes ~140s** — The kernel's CRNG needs entropy to initialize, but the
-  Vita's `sched_clock` is only 100Hz (10ms resolution). `CONFIG_CRYPTO_JITTERENTROPY`
-  fails with "host not compliant with requirements". sshd blocks until CRNG is ready
-  because `ssh-keygen -A` reads `/dev/urandom`. Fix: implement a high-resolution
-  clocksource using the Vita's hardware timers (ARM TWD or pervasive timer).
+- ~~**CRNG init takes ~140s**~~ — **SOLVED (2026-02-25).** Enabling the ARM Global Timer
+  (144 MHz clocksource) + `CONFIG_CRYPTO_JITTERENTROPY=y` reduced CRNG init from ~140s
+  to ~10s.
 - **DHCP first attempt fails** — udhcpc broadcasts discover before WPA handshake
   completes, gets no lease, forks to background. Eventually succeeds on retry.
   Cosmetic issue only — WiFi works within ~20s of kernel boot.
@@ -543,9 +584,6 @@ command 0x89B before the reset fixes this.
   constants, declared WLAN power helpers and sdhci-vita exports
 
 ## Next steps
-- **High-res clocksource** — Implement a proper clocksource using the Vita's ARM TWD
-  or pervasive timers. Would fix jitterentropy (fast CRNG init → fast sshd startup)
-  and improve kernel timing overall.
 - **Bluetooth** — SD8787 has combined WiFi/BT. Enable `CONFIG_BT`, `CONFIG_BT_MRVL`,
   `CONFIG_BT_MRVL_SDIO`. Firmware already loaded. Power sequencing is shared with WiFi.
 - **Audio pipeline** — Requires pervasive clock framework, I2S driver (needs RE of
