@@ -29,10 +29,10 @@ Working:
 - Touchscreen and button input (via syscon)
 - GPIO LEDs, RTC
 - eMMC storage (SDHCI) — all VitaOS partitions mountable
+- WiFi (Marvell SD8787 via mwifiex) — custom syscon power sequencing
 - Clean reboot back to VitaOS
 
 Not yet working:
-- WiFi (Marvell SD8787 — needs power-cycle GPIO pin RE)
 - USB (UDC base address unknown — needs RE)
 - SD2Vita (needs VitaOS plugin setup first)
 - Sony proprietary memory card (from Linux)

@@ -28,10 +28,11 @@ Codename: **Kermit**
 | DMAC4 | `0xE0400000` | - | Not started |
 | DMAC5 | `0xE0410000` | - | Not started |
 | Bigmac (crypto) | `0xE0050000` | - | Not started |
+| I2C0 | `0xE0500000` | 0x1000 | Raw MMIO (clockgen access for WiFi) |
 | MSIF (MemoryStick) | `0xE0900000` | - | Not started (needs auth) |
 | SDIF0 (eMMC) | `0xE0B00000` | 0x1000 | Working (SDHCI, ADMA) |
 | SDIF1 (GameCard) | `0xE0C00000` | 0x1000 | Driver works, card init fails |
-| SDIF2 (WLAN/BT) | `0xE0C10000` | 0x1000 | Driver works, SDIO enum fails |
+| SDIF2 (WLAN/BT) | `0xE0C10000` | 0x1000 | **Working** (mwifiex SDIO) |
 | SDIF3 (microSD) | `0xE0C20000` | 0x1000 | Driver works, no card |
 | UART0 | `0xE2030000` | 0x10000 | Working |
 | UART(n) | `0xE2030000 + n*0x10000` | 0x10000 | - |
@@ -173,34 +174,43 @@ Offsets relative to reset (`0xE3101000`) or gate (`0xE3102000`):
 - Linux driver: `mwifiex` + `mwifiex_sdio` (mainline, `drivers/net/wireless/marvell/mwifiex/`)
 - Standard firmware: `sd8787_uapsta.bin` in `/lib/firmware/mrvl/`
 - Vita's WiFi firmware (`wlanbt_robin_img_ax.skprx`) is SCE-encrypted, NOT usable
-- **Power control GPIOs (PDn, RESETN): UNKNOWN — primary blocker for WiFi**
-- Power sequencing driver: `pwrseq_sd8787.c` (in mainline kernel)
-- VitaOS module: SceWlanBt (NID 0x99052D93), kernel functions:
-  `ksceWlanBtSetConfiguration`, `ksceWlanBtGetConfiguration`, etc.
+- VitaOS module: SceWlanBt (NID 0x99052D93)
 
-### WiFi Status (2026-02-22)
+### WiFi Power Control — SOLVED (2026-02-25)
 
-Steps 1-3 are DONE. The SDHCI driver, device tree, and GIC interrupts all work.
-The SD8787 chip is electrically present (VitaOS leaves it powered) but SDIO
-enumeration fails — the chip needs a PDn GPIO power cycle to re-enter SDIO mode.
+**Key discovery:** The SD8787 does NOT use direct GPIO pins for power/reset.
+Instead, power control goes through Ernie (syscon) and an I2C clockgen chip:
 
-**Remaining:**
-1. Find PDn and RESETN GPIO pin numbers (unknown — **primary blocker**)
-2. Add `mmc-pwrseq-sd8787` device tree node with GPIO pins
-3. Enable `CONFIG_WIRELESS`, `CONFIG_MWIFIEX`, `CONFIG_MWIFIEX_SDIO`
-4. Add `mrvl/sd8787_uapsta.bin` firmware to rootfs
-5. Vita's encrypted firmware (`wlanbt_robin_img_ax.skprx`) is NOT usable
+| Control | Method | Details |
+|---------|--------|---------|
+| Power on/off | Ernie cmd `0x88A` | data: 0=off, 1=on |
+| Reset assert/de-assert | Ernie cmd `0x88F` | device mask `0x10` (WLANBT), mode: 0=assert, 1=de-assert |
+| 27MHz reference clock | P1P40167 clockgen on I2C0 | address `0x69`, register 1 bit 3 |
 
-**Observed behavior:**
-- At boot: present state `0x1ffc0000` (card detect high, not inserted, not stable)
-- After ~30min: present state `0x01ff0000` (card inserted, stable, all lines high)
-- Driver rebind confirms `[card present]` but MMC core polls ~37 int/sec with no
-  SDIO device ever appearing — CMD5 (SDIO) likely fails repeatedly
-- Error interrupt status = 0 (errors cleared after handling)
+The in-tree `pwrseq_sd8787.c` driver (which expects direct GPIO) is NOT used.
+Power sequencing is implemented directly in `vita-syscon.c` with a `wlan_power`
+sysfs attribute.
 
-**Power sequencing driver:** `drivers/mmc/core/pwrseq_sd8787.c` (in-tree) handles
-the PDn/RESETN toggle. DT binding: `mmc-pwrseq-sd8787`, properties: `powerdown-gpios`,
-`reset-gpios`.
+#### P1P40167 Clockgen (I2C bus 0, address 0x69)
+
+CY27040-compatible clock generator. Write protocol uses command byte = register - 128
+(register 1 → cmd `0x81`). Register 1 bits:
+
+| Bit | Function |
+|-----|----------|
+| 0 | Audio frequency select (0=44100, 1=48000) |
+| 2 | MotionClk enable |
+| 3 | WlanBtClk enable (27MHz buffered oscillator) |
+| 4 | AudioClk enable |
+
+Accessed via raw MMIO I2C (base `0xE0500000`) — no I2C subsystem driver yet.
+
+#### SDHCI Reinit After Power Change
+
+After powering on the SD8787, the SDIF2 SDHCI controller must be fully re-initialized:
+pervasive gate/reset cycle, I/O voltage to 1.8V (misc register `0xE3100124` bit 2),
+SDHCI software reset, interrupt configuration, bus voltage select + clock setup.
+This is handled by `sdhci_vita_reinit_host()` exported from `sdhci-vita.c`.
 
 ### Storage Status (2026-02-22)
 

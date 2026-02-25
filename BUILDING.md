@@ -116,6 +116,18 @@ The kernel config embeds this as `CONFIG_INITRAMFS_SOURCE="rootfs.cpio.xz"`. The
 
 Rootfs overlay (add files to the initramfs): `~/buildroot/rootfs-overlay/` on periscope.
 
+### WiFi firmware
+
+The Marvell SD8787 WiFi chip requires `sd8787_uapsta.bin` from linux-firmware. Place it in the rootfs overlay:
+
+```bash
+# On periscope:
+mkdir -p ~/buildroot/rootfs-overlay/lib/firmware/mrvl
+cp sd8787_uapsta.bin ~/buildroot/rootfs-overlay/lib/firmware/mrvl/
+```
+
+The firmware is loaded by the mwifiex driver when WiFi is powered on via `wlan_power` sysfs.
+
 ## macOS compatibility patches
 
 macOS lacks Linux-specific headers (`<elf.h>`, `<byteswap.h>`) and has a conflicting `uuid_t` typedef. The patches only affect host build tools in `scripts/`, not the kernel itself:
