@@ -2,11 +2,11 @@
 
 ## Date: 2026-02-25
 
-## Status: LINUX BOOTS — WiFi WORKING — eMMC PARTITIONS MOUNTED — REBOOT + POWEROFF WORK
+## Status: LINUX BOOTS — WiFi WORKING — I2C BUS — eMMC PARTITIONS MOUNTED — REBOOT + POWEROFF WORK
 
 Linux 6.12 boots to a Buildroot shell on the PlayStation Vita with all 4 Cortex-A9 cores,
 framebuffer, touchscreen, buttons, GPIO LEDs, RTC, serial console, SDHCI storage (eMMC readable),
-and WiFi networking (Marvell SD8787 via mwifiex).
+I2C bus controller, and WiFi networking (Marvell SD8787 via mwifiex).
 All VitaOS partitions on the eMMC are mountable and readable from Linux.
 `reboot` performs a clean hardware cold reset back to VitaOS with memory card intact.
 `poweroff` powers the device off completely (not a reboot).
@@ -154,6 +154,26 @@ storage plugin). The SD2Vita has never been verified working on this unit. Need 
 2. If it works in VitaOS, the Linux SDHCI driver should also work
 3. If it still fails in Linux, check SDHCI command timeout / error interrupt status
 
+### I2C Bus Controller — WORKING (2026-02-25)
+
+Platform I2C bus driver (`drivers/i2c/busses/i2c-vita.c`) for the Vita's two I2C
+buses. Polling-based (no IRQ), supports standard I2C and SMBus-emulated transfers.
+
+- **I2C0** (`0xE0500000`): Enabled, 3 devices detected (`0x1A`, `0x4A`, `0x69`)
+- **I2C1** (`0xE0510000`): DT node present, disabled (no powered consumers on PCH-1000)
+
+Uses the existing reset controller for deassert. Clock gating via raw MMIO
+(same pattern as sdhci-vita.c — no clock driver yet). The syscon driver's
+clockgen access was refactored from ~150 lines of raw MMIO I2C to standard
+`i2c_transfer()` calls, looking up the adapter via DT phandle.
+
+**NACK detection:** The Vita I2C controller reports slave NACK in IRQ status
+register (0x28) bit 15. Without this, all addresses falsely appear to ACK.
+Discovered by comparing register values after transfers to real vs non-existent
+devices (real: `0x000D`, ghost: `0x800E`). Note: `i2cdetect` must use `-r` flag
+(read mode) — the default quick-write mode doesn't reliably trigger NACK on
+this controller.
+
 ### WiFi / SDIF2 — WORKING (2026-02-25)
 
 The Marvell SD8787 WiFi/BT chip is on SDIF2. WiFi is fully working with the
@@ -174,7 +194,7 @@ cannot be used. The power sequencing is implemented directly in `vita-syscon.c`.
 
 **Power-on sequence** (matches VitaOS boot order):
 1. Disable SDIF2 interrupts (prevent premature MMC detect at wrong voltage)
-2. Enable 27MHz WlanBt clock from clockgen via raw I2C0
+2. Enable 27MHz WlanBt clock from clockgen via I2C subsystem
 3. Power on wireless via Ernie cmd `0x88A`
 4. De-assert WLANBT reset via Ernie cmd `0x88F`
 5. Full SDHCI controller re-init (pervasive reset cycle, 1.8V I/O voltage)
@@ -187,9 +207,9 @@ gate/reset cycle, I/O voltage selection via misc register `0xE3100124` (bit 2 = 
 for SDIF2), SDHCI software reset, interrupt configuration, bus voltage select, and
 clock setup (div 128 for initial enumeration).
 
-**I2C0 clockgen access:** Raw MMIO I2C (base `0xE0500000`) since no I2C subsystem
-driver exists yet. Requires pervasive gate/reset for I2C bus 0 (offset `0x110`).
-The I2C register layout was derived from vita-libbaremetal.
+**I2C0 clockgen access:** Uses the I2C subsystem via `i2c_transfer()`. The syscon
+driver looks up the I2C adapter via `vita,clockgen-i2c = <&i2c0>` phandle in the
+device tree, with deferred probe support if I2C0 hasn't registered yet.
 
 **Usage:** `echo 1 > /sys/devices/platform/soc/e0a00000.spi/spi_master/spi0/spi0.0/wlan_power`
 then `wpa_supplicant` + `udhcpc` for network access. The reboot notifier automatically
@@ -266,6 +286,8 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - **eMMC auto-mount** — `S05vita` init script creates `/dev/vita/*` symlinks, fstab
   provides `mount /mnt/ur0` etc. (read-only, noauto)
 - **Filesystem support** — CONFIG_EXFAT_FS=y, CONFIG_VFAT_FS=y, CONFIG_BLK_DEV_LOOP=y
+- **I2C bus** — I2C0 adapter registered (`/dev/i2c-0`), polling-based driver.
+  Used by syscon for clockgen access (WiFi 27MHz clock, audio clock, motion clock).
 - **WiFi** — Marvell SD8787 via mwifiex SDIO driver. Power sequencing through Ernie
   syscon commands + I2C clockgen. Controlled via `wlan_power` sysfs attribute.
 - **Reboot + Poweroff** — `reboot` cold-resets to VitaOS, `poweroff` powers off completely.
@@ -296,10 +318,22 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 
 ### `arch/arm/boot/dts/vita.dtsi`
 - Added 4 SDIF device tree nodes (mmc@e0b00000 through mmc@e0c20000) with interrupt properties
+- Added I2C0/I2C1 device tree nodes with IRQs (GIC_SPI 110/111) and reset cells (68/69)
+- Added `vita,clockgen-i2c = <&i2c0>` phandle on syscon SPI node
 
 ### `arch/arm/boot/dts/vita1000.dts`
 - Added `console=ttyS0,115200` to bootargs
 - Enabled SDIF0 (eMMC) and SDIF2 (WLAN) only — SDIF1/3 disabled to reduce log spam
+- Enabled I2C0 (`status = "okay"`); I2C1 left disabled (no powered consumers)
+
+### `drivers/i2c/busses/i2c-vita.c` (NEW)
+- Polling-based I2C bus controller driver for Vita's two I2C buses
+- Supports standard I2C transfers and SMBus emulation
+- Clock gating via raw MMIO (no clock driver), reset via reset controller
+- Hardware init sequence from vita-libbaremetal (bus reset, IRQ config, speed setup)
+
+### `drivers/i2c/busses/Kconfig` + `Makefile`
+- Added I2C_VITA config and build entries
 
 ### `drivers/mmc/host/sdhci-vita.c` (NEW)
 - SDHCI platform driver for Vita's SDIF controllers
@@ -355,6 +389,7 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - `CONFIG_SOFTLOCKUP_DETECTOR=y` — CPU soft lockup warnings
 - `CONFIG_DETECT_HUNG_TASK=y` — hung task warnings (120s timeout)
 - `CONFIG_UNWINDER_FRAME_POINTER=y` — better stack traces in panics/oopses
+- `CONFIG_I2C=y` + `CONFIG_I2C_CHARDEV=y` + `CONFIG_I2C_VITA=y` — I2C subsystem + `/dev/i2c-*` + Vita bus driver
 
 ## Buildroot rootfs overlay (on periscope: `~/buildroot/rootfs-overlay/`)
 - `etc/fstab` — standard mounts + debugfs + Vita eMMC partitions (ro, noauto)
@@ -448,19 +483,20 @@ command 0x89B before the reset fixes this.
   (MSIF 0x89B, game card 0x888, WiFi/BT if enabled), then sends poweroff (0x00C0
   with inverted mode) for SYS_POWER_OFF/SYS_HALT or cold reset (0x0801) for
   SYS_RESTART, with cold reset as fallback if poweroff fails. Also: WiFi power
-  sequencing via Ernie commands (0x88A, 0x88F) and raw I2C0 clockgen access
-  (P1P40167 at 0x69), `wlan_power` sysfs attribute.
-- `linux_vita/include/linux/mfd/vita-syscon.h` — Added `reboot_nb` and `wlan_power`
-  to `struct vita_syscon`, added reset type constants
+  sequencing via Ernie commands (0x88A, 0x88F) and I2C clockgen
+  (P1P40167 at 0x69) via `i2c_transfer()`, `wlan_power` sysfs attribute.
+- `linux_vita/include/linux/mfd/vita-syscon.h` — Added `reboot_nb`, `wlan_power`,
+  and `clockgen_i2c` to `struct vita_syscon`, added reset type constants
 
 ## Next steps
 - **Bluetooth** — SD8787 has combined WiFi/BT. Enable `CONFIG_BT`, `CONFIG_BT_MRVL`,
   `CONFIG_BT_MRVL_SDIO`. Firmware already loaded. Power sequencing is shared with WiFi.
-- **Proper I2C driver** — Replace raw MMIO I2C0 access in syscon with a proper platform
-  I2C driver. Would enable DT-based clockgen binding and other I2C peripherals.
+- **Audio pipeline** — Requires pervasive clock framework, I2S driver (needs RE of
+  `audio.skprx`), DMAC4 driver, ASoC machine driver. Clockgen audio clock control
+  is already possible via I2C0.
 - **USB controller RE** — Find UDC MMIO base from os0/kd/usbstor.skprx via Ghidra.
   Would enable USB gadget networking as alternative to WiFi.
 - **SD2Vita** — Install YAMT on VitaOS, verify adapter works, then revisit Linux.
   SDIF1 currently disabled in DTS.
-- **Add tools to rootfs** — devmem2, evtest, strace via buildroot packages
+- **Add tools to rootfs** — devmem2, evtest, i2c-tools, strace via buildroot packages
 - **Contribute upstream** — L2 cache fix + SDHCI driver + SCE partition parser to xerpi's repo
