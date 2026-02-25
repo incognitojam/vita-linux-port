@@ -102,17 +102,17 @@ The root filesystem is built on periscope using Buildroot (Linux users can also 
 ```bash
 ssh periscope
 cd ~/buildroot && make -j6
-# Output: output/images/rootfs.cpio.xz
-cp output/images/rootfs.cpio.xz ~/linux_vita/
+# Output: output/images/rootfs.cpio.zst
+cp output/images/rootfs.cpio.zst ~/linux_vita/
 ```
 
 To fetch it from periscope for local builds:
 
 ```bash
-scp periscope:~/buildroot/output/images/rootfs.cpio.xz linux_vita/rootfs.cpio.xz
+scp periscope:~/buildroot/output/images/rootfs.cpio.zst linux_vita/rootfs.cpio.zst
 ```
 
-The kernel config embeds this as `CONFIG_INITRAMFS_SOURCE="rootfs.cpio.xz"`. The file must be present in `linux_vita/` at build time for the initramfs to be included in the zImage.
+The kernel config embeds this as `CONFIG_INITRAMFS_SOURCE="rootfs.cpio.zst"`. The file must be present in `linux_vita/` at build time for the initramfs to be included in the zImage.
 
 Rootfs overlay (add files to the initramfs): `~/buildroot/rootfs-overlay/` on periscope.
 

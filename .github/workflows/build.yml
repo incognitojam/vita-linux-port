@@ -49,7 +49,7 @@ jobs:
         run: |
           export PATH="${{ github.workspace }}/.toolchains/${{ env.BOOTLIN_DIR }}/bin:$PATH"
           make ARCH=arm CROSS_COMPILE=arm-linux- vita_defconfig
-          # No initramfs in CI — rootfs.cpio.xz is not in the repo
+          # No initramfs in CI — rootfs.cpio.zst is not in the repo
           sed -i 's|^CONFIG_INITRAMFS_SOURCE=.*|CONFIG_INITRAMFS_SOURCE=""|' .config
           make ARCH=arm CROSS_COMPILE=arm-linux- olddefconfig
 
@@ -96,7 +96,7 @@ jobs:
           gmake ARCH=arm LLVM=1 \
             HOSTCFLAGS="-Iscripts/macos-include -I$(brew --prefix libelf)/include" \
             vita_defconfig
-          # No initramfs in CI — rootfs.cpio.xz is not in the repo
+          # No initramfs in CI — rootfs.cpio.zst is not in the repo
           sed -i 's|^CONFIG_INITRAMFS_SOURCE=.*|CONFIG_INITRAMFS_SOURCE=""|' .config
           gmake ARCH=arm LLVM=1 \
             HOSTCFLAGS="-Iscripts/macos-include -I$(brew --prefix libelf)/include" \

@@ -23,9 +23,9 @@ see the remote default. Don't assume a hardcoded branch name — verify it.
 ## Buildroot VM
 
 - `ssh periscope` — Debian 13 aarch64 (UTM + Rosetta), rootfs builds only
-- Build: `cd ~/buildroot && make -j6` → `output/images/rootfs.cpio.xz`
+- Build: `cd ~/buildroot && make -j6` → `output/images/rootfs.cpio.zst`
 - Overlay: `~/buildroot/rootfs-overlay/`
-- Fetch: `scp periscope:~/buildroot/output/images/rootfs.cpio.xz linux_vita/rootfs.cpio.xz`
+- Fetch: `scp periscope:~/buildroot/output/images/rootfs.cpio.zst linux_vita/rootfs.cpio.zst`
 
 ## Workflow
 
