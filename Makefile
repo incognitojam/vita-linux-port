@@ -13,6 +13,9 @@ DTB              := $(LOCAL_KERNEL_DIR)/arch/arm/boot/dts/vita1000.dtb
 
 UNAME_S := $(shell uname -s)
 
+# --- ccache (used if available) ---
+CCACHE := $(shell command -v ccache 2>/dev/null)
+
 ifeq ($(UNAME_S),Darwin)
   # macOS: LLVM/Clang from Homebrew
   BREW_LLVM   := $(shell brew --prefix llvm)
@@ -24,15 +27,21 @@ ifeq ($(UNAME_S),Darwin)
   KMAKE       := gmake ARCH=arm LLVM=1 HOSTCFLAGS="-Iscripts/macos-include -I$(BREW_LIBELF)"
   CPP         := clang -E
   NPROC       := $(shell sysctl -n hw.ncpu)
+  ifneq ($(CCACHE),)
+    KMAKE += CC="ccache clang" HOSTCC="ccache clang"
+  endif
 else
   # Linux: Bootlin cross-compiler (arm-linux-* must be on PATH)
   CROSS_COMPILE ?= arm-linux-
   KMAKE         := make ARCH=arm CROSS_COMPILE=$(CROSS_COMPILE)
   CPP           := $(CROSS_COMPILE)cpp
   NPROC         := $(shell nproc)
+  ifneq ($(CCACHE),)
+    KMAKE += CC="ccache $(CROSS_COMPILE)gcc" HOSTCC="ccache gcc"
+  endif
 endif
 
-.PHONY: config savedefconfig build build-zimage build-dtb dtb push boot deploy help watch serial lsp
+.PHONY: config savedefconfig build build-zimage build-dtb dtb push boot deploy help watch serial lsp clean
 
 help: ## show this help
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | \
@@ -42,7 +51,13 @@ help: ## show this help
 
 VITA_DEFCONFIG := $(LOCAL_KERNEL_DIR)/arch/arm/configs/vita_defconfig
 
-config: ## apply vita_defconfig → .config
+KCONFIG := $(LOCAL_KERNEL_DIR)/.config
+
+config: ## apply vita_defconfig → .config (overwrites)
+	@$(KMAKE) -C $(LOCAL_KERNEL_DIR) vita_defconfig
+
+$(KCONFIG):
+	@echo ".config missing — generating from vita_defconfig"
 	@$(KMAKE) -C $(LOCAL_KERNEL_DIR) vita_defconfig
 
 savedefconfig: ## update vita_defconfig from current .config
@@ -50,9 +65,19 @@ savedefconfig: ## update vita_defconfig from current .config
 	@mv $(LOCAL_KERNEL_DIR)/defconfig $(VITA_DEFCONFIG)
 	@echo "vita_defconfig updated ($(shell wc -l < $(VITA_DEFCONFIG)) lines)"
 
+# ------- Clean -------
+
+clean: ## remove kernel build artifacts (works around macOS case-sensitivity bug)
+	$(KMAKE) -C $(LOCAL_KERNEL_DIR) clean 2>/dev/null || true
+	@find $(LOCAL_KERNEL_DIR) \( -name '*.o' -o -name '*.o.cmd' -o -name '*.ko' \
+		-o -name '.*.cmd' -o -name '*.a' -o -name '*.order' -o -name '*.symvers' \) \
+		-delete 2>/dev/null || true
+	@rm -f $(ZIMAGE) $(LOCAL_KERNEL_DIR)/vmlinux $(LOCAL_KERNEL_DIR)/System.map
+	@echo "Clean complete"
+
 # ------- Build -------
 
-build: build-zimage build-dtb ## compile zImage + DTB locally
+build: $(KCONFIG) build-zimage build-dtb ## compile zImage + DTB locally
 
 build-zimage:
 	$(KMAKE) -C $(LOCAL_KERNEL_DIR) zImage -j$(NPROC)
