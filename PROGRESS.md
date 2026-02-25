@@ -1,11 +1,12 @@
 # Vita Linux Port - Progress
 
-## Date: 2026-02-22
+## Date: 2026-02-25
 
-## Status: LINUX BOOTS — eMMC PARTITIONS MOUNTED — REBOOT WORKS
+## Status: LINUX BOOTS — WiFi WORKING — eMMC PARTITIONS MOUNTED — REBOOT WORKS
 
 Linux 6.12 boots to a Buildroot shell on the PlayStation Vita with all 4 Cortex-A9 cores,
-framebuffer, touchscreen, buttons, GPIO LEDs, RTC, serial console, and SDHCI storage (eMMC readable).
+framebuffer, touchscreen, buttons, GPIO LEDs, RTC, serial console, SDHCI storage (eMMC readable),
+and WiFi networking (Marvell SD8787 via mwifiex).
 All VitaOS partitions on the eMMC are mountable and readable from Linux.
 `reboot` performs a clean hardware cold reset back to VitaOS with memory card intact.
 
@@ -63,7 +64,7 @@ Found via reverse engineering in `psvcmd56` (motoharu-gosuto):
 |------|-------------|---------|-----------------|--------|
 | SDIF0 | 0xE0B00000 | 188     | eMMC            | **Working** — M4G1FA 3.55 GiB detected, readable |
 | SDIF1 | 0xE0C00000 | 189     | Game card       | Card init fails (SD2Vita adapter) |
-| SDIF2 | 0xE0C10000 | 190     | WLAN/BT (SD8787)| Card present but init fails (see WiFi section) |
+| SDIF2 | 0xE0C10000 | 190     | WLAN/BT (SD8787)| **Working** — mwifiex SDIO WiFi via custom power sequencing |
 | SDIF3 | 0xE0C20000 | 191     | microSD         | Controller registered, no card |
 
 ### eMMC
@@ -152,48 +153,61 @@ storage plugin). The SD2Vita has never been verified working on this unit. Need 
 2. If it works in VitaOS, the Linux SDHCI driver should also work
 3. If it still fails in Linux, check SDHCI command timeout / error interrupt status
 
-### WiFi / SDIF2 Investigation (2026-02-22)
+### WiFi / SDIF2 — WORKING (2026-02-25)
 
-The Marvell SD8787 WiFi/BT chip is on SDIF2. Key findings:
+The Marvell SD8787 WiFi/BT chip is on SDIF2. WiFi is fully working with the
+mwifiex SDIO driver after implementing custom power sequencing.
 
-**At boot:** SDIF2 present state = `0x1ffc0000` — card detect pin high but card NOT
-inserted, state NOT stable. The chip isn't ready when the SDHCI driver probes (~0.9s
-into boot).
+**Key discovery:** The SD8787 power control on the Vita does NOT use direct GPIO
+pins (as initially assumed). Instead, power, reset, and the 27MHz reference clock
+are all controlled indirectly:
 
-**After ~30 minutes:** Present state changes to `0x01ff0000` — card inserted, state
-stable, all data lines and CMD high. VitaOS left the chip powered and it eventually
-becomes visible on the SDIO bus. Unbinding/rebinding the driver (`echo e0c10000.mmc >
-/sys/bus/platform/drivers/sdhci-vita/{unbind,bind}`) confirms `[card present]`.
+- **Power & reset:** Ernie (syscon) commands `0x88A` (wireless power on/off) and
+  `0x88F` (device reset assert/de-assert with mask `0x10` for WLANBT)
+- **27MHz clock:** P1P40167 clockgen chip on I2C bus 0 (address `0x69`), register 1
+  bit 3 enables the WlanBt clock. Uses CY27040 write protocol where register N is
+  addressed as command byte `N - 128` (so reg 1 → cmd `0x81`, NOT `0x01`)
 
-**But card init fails:** Despite the chip being present, the MMC core continuously polls
-and fails to initialize it (~37 interrupts/sec on GIC SPI 190). No SDIO device appears
-in `/sys/bus/sdio/devices/`. The SDHCI error status register reads 0 (errors handled
-and cleared). The chip responds to some commands (interrupts fire) but never completes
-SDIO enumeration (CMD5 likely failing).
+This means the in-tree `pwrseq_sd8787.c` driver (which expects direct GPIO pins)
+cannot be used. The power sequencing is implemented directly in `vita-syscon.c`.
 
-**Root cause hypothesis:** The chip was left in an active/associated state by VitaOS,
-not in a fresh SDIO-enumerable state. The SD8787 needs a PDn (power-down) GPIO toggle
-to do a clean power cycle and re-enter SDIO enumeration mode.
+**Power-on sequence** (matches VitaOS boot order):
+1. Disable SDIF2 interrupts (prevent premature MMC detect at wrong voltage)
+2. Enable 27MHz WlanBt clock from clockgen via raw I2C0
+3. Power on wireless via Ernie cmd `0x88A`
+4. De-assert WLANBT reset via Ernie cmd `0x88F`
+5. Full SDHCI controller re-init (pervasive reset cycle, 1.8V I/O voltage)
+6. Trigger MMC core rescan (CMD5 SDIO enumeration)
 
-**Power sequencing:** The kernel has `drivers/mmc/core/pwrseq_sd8787.c` which handles
-exactly this — it toggles `reset-gpios` and `powerdown-gpios` with a 300ms delay.
-But we need the actual GPIO pin numbers for the Vita's PDn and RESETN connections.
+**SDHCI re-init** (required after WiFi power change):
+The SDHCI controller must be fully torn down and rebuilt after the SD8787 is
+powered on. This matches vita-libbaremetal's `sdif_reset()` sequence: pervasive
+gate/reset cycle, I/O voltage selection via misc register `0xE3100124` (bit 2 = 1.8V
+for SDIF2), SDHCI software reset, interrupt configuration, bus voltage select, and
+clock setup (div 128 for initial enumeration).
 
-**What's needed to get WiFi working:**
-1. Find SD8787 PDn and RESETN GPIO pin numbers (unknown — needs RE or community research)
-2. Add `mmc-pwrseq-sd8787` node to device tree with the GPIO pins
-3. Enable `CONFIG_WIRELESS`, `CONFIG_CFG80211`, `CONFIG_MWIFIEX`, `CONFIG_MWIFIEX_SDIO`
-4. Enable `CONFIG_DEBUG_FS` + `CONFIG_DYNAMIC_DEBUG` (currently missing, needed for debugging)
-5. Add `mrvl/sd8787_uapsta.bin` firmware to rootfs `/lib/firmware/mrvl/`
-6. The Vita's encrypted firmware (`os0/kd/wlanbt_robin_img_ax.skprx`, 311 KB) is
-   SCE-encrypted and NOT usable directly — standard linux-firmware blob needed
+**I2C0 clockgen access:** Raw MMIO I2C (base `0xE0500000`) since no I2C subsystem
+driver exists yet. Requires pervasive gate/reset for I2C bus 0 (offset `0x110`).
+The I2C register layout was derived from vita-libbaremetal.
 
-**Research leads for GPIO pins:**
-- RE `os0/kd/wlanbt_robin_img_ax.skprx` or VitaOS bootloader in Ghidra
-- HENkaku wiki: https://wiki.henkaku.xyz/vita/SceWlanBt
-- Check vita-libbaremetal `gpio.h` — defines GPIO0 base `0xE20A0000`, GPIO1 base `0xE0100000`,
-  but WiFi GPIO pins are NOT listed in available headers
-- Community research: HENkaku Discord, xerpi's work, SonicMastr's contributions
+**Usage:** `echo 1 > /sys/devices/platform/soc/e0a00000.spi/spi_master/spi0/spi0.0/wlan_power`
+then `wpa_supplicant` + `udhcpc` for network access. The reboot notifier automatically
+powers off WiFi/BT before cold reset.
+
+**Firmware:** Standard `mrvl/sd8787_uapsta.bin` from linux-firmware, placed in rootfs
+at `/lib/firmware/mrvl/`. The Vita's encrypted firmware (`wlanbt_robin_img_ax.skprx`)
+is NOT usable.
+
+**DTS changes:** SDIF1 (game card) and SDIF3 (microSD) disabled to avoid polling log
+spam — only SDIF0 (eMMC) and SDIF2 (WLAN) enabled.
+
+#### Previous investigation (2026-02-22)
+
+Before the power sequencing was understood, the chip was observed in a stuck state
+left by VitaOS. At boot, SDIF2 present state was `0x1ffc0000` (card not inserted),
+changing to `0x01ff0000` after ~30 minutes (card present but SDIO enumeration failing
+at ~37 interrupts/sec). The initial hypothesis was that direct GPIO PDn/RESETN pins
+were needed, but the actual control path is through Ernie syscon commands.
 
 ### DTB Build Note
 
@@ -245,29 +259,28 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - GPIO LEDs (PS button blue LED, gamecard activity LED)
 - RTC (reads correct time from syscon)
 - PL310 L2 cache controller (16-way, 2MB)
-- **SDHCI storage** — eMMC (3.55 GiB) readable via ADMA, all 4 SDIF hosts registered
+- **SDHCI storage** — eMMC (3.55 GiB) readable via ADMA, SDIF0 + SDIF2 enabled
 - **eMMC partitions** — SCE partition table auto-detected via custom kernel partition parser
   (`block/partitions/sce.c`), all 12 partitions exposed as `/dev/mmcblk*pN`
 - **eMMC auto-mount** — `S05vita` init script creates `/dev/vita/*` symlinks, fstab
   provides `mount /mnt/ur0` etc. (read-only, noauto)
 - **Filesystem support** — CONFIG_EXFAT_FS=y, CONFIG_VFAT_FS=y, CONFIG_BLK_DEV_LOOP=y
+- **WiFi** — Marvell SD8787 via mwifiex SDIO driver. Power sequencing through Ernie
+  syscon commands + I2C clockgen. Controlled via `wlan_power` sysfs attribute.
 - **Debug infrastructure** — debugfs (auto-mounted), dynamic debug (687 callsites),
   MMC debug, SysRq over serial, printk timestamps, softlockup/hung task detection,
   frame pointer unwinder for clean stack traces
 
 ## What doesn't work / not yet implemented
-- **WiFi** — SD8787 chip is electrically present on SDIF2 (VitaOS left it powered),
-  SDHCI bus works, MMC core polls actively, but SDIO enumeration fails. Needs power
-  cycle via PDn GPIO (pin number unknown). See WiFi section above.
 - **SD2Vita** — Card init fails on SDIF1. No SD2Vita plugin in VitaOS tai config.
-  Need to install YAMT and verify in VitaOS first.
+  Need to install YAMT and verify in VitaOS first. SDIF1 currently disabled in DTS.
 - **USB** — `CONFIG_USB_SUPPORT` not set. UDC MMIO base address unknown (needs RE).
   3 UDC buses exist (pervasive offsets 0x90/0x94/0x98). RE targets: `os0/kd/usbstor.skprx`,
   `os0/kd/usbdev_serial.skprx` (accessible from mounted os0 partition).
 - **Vita memory card** — Uses MSIF (0xE0900000), proprietary protocol with crypto auth.
   Not standard SD. Would need custom driver.
-- **File transfer** — No network = no scp/wget. Workflow: edit rootfs overlay on
-  periscope, rebuild rootfs, then rebuild kernel locally and upload zImage via FTP.
+- **Bluetooth** — SD8787 has BT capability but only WiFi is enabled (mwifiex).
+  BT would need `CONFIG_BT`, `CONFIG_BT_MRVL`, `CONFIG_BT_MRVL_SDIO`.
 
 ## Modified files (from upstream xerpi)
 
@@ -283,10 +296,15 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 
 ### `arch/arm/boot/dts/vita1000.dts`
 - Added `console=ttyS0,115200` to bootargs
-- Enabled all 4 SDIF controllers, SDIF1 with `non-removable`
+- Enabled SDIF0 (eMMC) and SDIF2 (WLAN) only — SDIF1/3 disabled to reduce log spam
 
 ### `drivers/mmc/host/sdhci-vita.c` (NEW)
 - SDHCI platform driver for Vita's SDIF controllers
+- Tracks SDIF hosts for cross-driver access
+- Exports `sdhci_vita_reinit_host()` and `sdhci_vita_trigger_rescan()` for WiFi
+  power sequencing — full pervasive reset cycle, I/O voltage config, SDHCI software
+  reset, and MMC core rescan
+- Bus-specific OCR enforcement and SDIF2 power behavior for SD8787 SDIO
 
 ### `drivers/mmc/host/Kconfig` + `Makefile`
 - Added MMC_SDHCI_VITA config and build entries
@@ -323,6 +341,9 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - `CONFIG_BLK_DEV_LOOP=y` — loop block devices
 - `CONFIG_VFAT_FS=y` + `CONFIG_FAT_FS=y` — FAT16 filesystem
 - `CONFIG_NLS_CODEPAGE_437=y` + `CONFIG_NLS_ISO8859_1=y` — NLS for vfat
+- `CONFIG_WIRELESS=y` + `CONFIG_CFG80211=y` + `CONFIG_MAC80211=y` — wireless networking stack
+- `CONFIG_MWIFIEX=y` + `CONFIG_MWIFIEX_SDIO=y` — Marvell WiFi-Ex SDIO driver for SD8787
+- `CONFIG_NETDEVICES=y` + `CONFIG_WLAN=y` — network device and WLAN subsystem
 - `CONFIG_DEBUG_FS=y` — debugfs filesystem (required by mwifiex, MMC, clock, GPIO debug)
 - `CONFIG_DYNAMIC_DEBUG=y` — per-callsite `pr_debug`/`dev_dbg` control via debugfs
 - `CONFIG_MMC_DEBUG=y` — MMC subsystem debug logging
@@ -335,6 +356,7 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 ## Buildroot rootfs overlay (on periscope: `~/buildroot/rootfs-overlay/`)
 - `etc/fstab` — standard mounts + debugfs + Vita eMMC partitions (ro, noauto)
 - `etc/init.d/S05vita` — creates `/dev/vita/*` symlinks to eMMC partitions
+- `lib/firmware/mrvl/sd8787_uapsta.bin` — Marvell SD8787 WiFi firmware (from linux-firmware)
 - `mnt/{os0,vs0,sa0,tm0,vd0,ud0,pd0,ur0}/` — mountpoint directories
 
 ## Reboot / Power Management (2026-02-22) — SOLVED
@@ -397,21 +419,21 @@ command 0x89B before the reset fixes this.
 ### Files Modified
 
 - `linux_vita/drivers/mfd/vita-syscon.c` — Reboot notifier sends syscon 0x89B
-  (MSIF power off), 0x888 (game card power off), then 0x0801 (cold reset)
-- `linux_vita/include/linux/mfd/vita-syscon.h` — Added `reboot_nb` to
-  `struct vita_syscon`, added reset type constants
+  (MSIF power off), 0x888 (game card power off), then 0x0801 (cold reset).
+  WiFi power sequencing via Ernie commands (0x88A, 0x88F) and raw I2C0 clockgen
+  access (P1P40167 at 0x69). Exposes `wlan_power` sysfs attribute. Reboot notifier
+  also powers off WiFi/BT if enabled.
+- `linux_vita/include/linux/mfd/vita-syscon.h` — Added `reboot_nb` and `wlan_power`
+  to `struct vita_syscon`, added reset type constants
 
 ## Next steps
-- **Find WiFi GPIO pins** — The key blocker for networking. Research avenues:
-  - HENkaku wiki (SceWlanBt, GPIO pages)
-  - HENkaku Discord / community
-  - xerpi's or SonicMastr's research
-  - RE VitaOS modules in Ghidra (os0/kd/wlanbt_robin_img_ax.skprx, lowio.skprx)
-- **Enable wireless stack** — CONFIG_WIRELESS, CONFIG_MWIFIEX, CONFIG_MWIFIEX_SDIO.
-  Add mrvl/sd8787_uapsta.bin firmware to rootfs. Debug infra (debugfs, dynamic debug)
-  already enabled for SDIO troubleshooting.
+- **Bluetooth** — SD8787 has combined WiFi/BT. Enable `CONFIG_BT`, `CONFIG_BT_MRVL`,
+  `CONFIG_BT_MRVL_SDIO`. Firmware already loaded. Power sequencing is shared with WiFi.
+- **Proper I2C driver** — Replace raw MMIO I2C0 access in syscon with a proper platform
+  I2C driver. Would enable DT-based clockgen binding and other I2C peripherals.
 - **USB controller RE** — Find UDC MMIO base from os0/kd/usbstor.skprx via Ghidra.
   Would enable USB gadget networking as alternative to WiFi.
 - **SD2Vita** — Install YAMT on VitaOS, verify adapter works, then revisit Linux.
+  SDIF1 currently disabled in DTS.
 - **Add tools to rootfs** — devmem2, evtest, strace via buildroot packages
 - **Contribute upstream** — L2 cache fix + SDHCI driver + SCE partition parser to xerpi's repo
