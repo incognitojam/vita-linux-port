@@ -50,6 +50,25 @@ TCP command interface: `echo "cmd" | nc 192.168.1.34 1338`
 - `boot_watch.sh` — monitors boot progress, auto-login; called by `make boot`, standalone via `make watch`
 - `vita_cmd.sh "cmd" [timeout]` — run command on Vita, blocks until prompt returns
 
+## Decrypted os0 Modules (`refs/vita-os0`)
+
+Decrypted VitaOS kernel modules (not committed). SCE-format ELFs — `objdump -d`
+produces no output because the sections aren't standard. To disassemble:
+
+```sh
+# Get code segment offset+size from first LOAD segment
+arm-none-eabi-readelf -l module.skprx.elf
+# Extract raw code, repackage as a proper ELF, disassemble as Thumb
+dd if=module.skprx.elf of=/tmp/code.bin bs=1 skip=$((OFFSET)) count=$((SIZE))
+arm-none-eabi-objcopy -I binary -O elf32-littlearm -B arm /tmp/code.bin /tmp/code.elf \
+  --change-section-address .data=0x81000000 --set-section-flags .data=code,alloc,load
+arm-none-eabi-objdump -d -M force-thumb /tmp/code.elf > /tmp/disasm.txt
+```
+
+Key modules: `kd/syscon.skprx.elf` (Ernie SPI), `kd/sysstatemgr.skprx.elf` (power states),
+`kd/lowio.skprx.elf` (low-level I/O), `kd/usbstor.skprx.elf` / `kd/usbdev_serial.skprx.elf` (USB).
+`sm/` contains F00D (Toshiba MeP) secure modules — not ARM, different toolchain.
+
 ## Key Reference Repos (`refs/`)
 
 - `psvcmd56` — reversed SceSdif/SceSdstor (SDIF GIC interrupt numbers)
