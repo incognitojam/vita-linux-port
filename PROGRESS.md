@@ -1,14 +1,15 @@
 # Vita Linux Port - Progress
 
-## Date: 2026-02-25
+## Date: 2026-02-26
 
-## Status: LINUX BOOTS — HIGH-RES CLOCKS — WiFi AUTO-ON + SSH — I2C BUS — eMMC PARTITIONS MOUNTED — REBOOT + POWEROFF WORK
+## Status: LINUX BOOTS — WiFi + Bluetooth — SSH — I2C — eMMC — HIGH-RES CLOCKS — REBOOT + POWEROFF
 
 Linux 6.12 boots to a Buildroot shell on the PlayStation Vita with all 4 Cortex-A9 cores,
 framebuffer, touchscreen, buttons, GPIO LEDs, RTC, serial console, SDHCI storage (eMMC readable),
-I2C bus controller, WiFi networking (Marvell SD8787 via mwifiex) with SSH access, and a
-high-resolution 144 MHz clocksource (ARM Cortex-A9 Global Timer).
-WiFi powers on automatically at boot via the standard Linux `mmc-pwrseq` infrastructure.
+I2C bus controller, WiFi networking (Marvell SD8787 via mwifiex) with SSH access, Bluetooth
+(SD8787 via btmrvl), and a high-resolution 144 MHz clocksource (ARM Cortex-A9 Global Timer).
+WiFi and Bluetooth power on automatically at boot via the standard Linux `mmc-pwrseq`
+infrastructure (shared firmware and power sequencing).
 All VitaOS partitions on the eMMC are mountable and readable from Linux.
 `reboot` performs a clean hardware cold reset back to VitaOS with memory card intact.
 `poweroff` powers the device off completely (not a reboot).
@@ -281,6 +282,40 @@ is NOT usable.
 **DTS changes:** SDIF1 (game card) and SDIF3 (microSD) disabled to avoid polling log
 spam — only SDIF0 (eMMC) and SDIF2 (WLAN) enabled.
 
+### Bluetooth / SD8787 — WORKING (2026-02-26)
+
+The Marvell SD8787's Bluetooth function (SDIO fn=2) is working with the btmrvl driver.
+Firmware, power sequencing, and the 27MHz reference clock are all shared with WiFi — no
+additional hardware setup is needed beyond what the WLAN pwrseq driver already does.
+
+**Configuration:** `CONFIG_BT=y`, `CONFIG_BT_RFCOMM=y` (with TTY), `CONFIG_BT_BNEP=y`,
+`CONFIG_BT_HIDP=y`, `CONFIG_BT_MRVL=y`, `CONFIG_BT_MRVL_SDIO=y`.
+
+**Firmware:** Same `mrvl/sd8787_uapsta.bin` as WiFi. btmrvl downloads it to fn=2 at
+probe time (466 KB). No separate BT firmware file needed.
+
+**Userspace:** BlueZ 5 in rootfs — `bluetoothd`, `bluetoothctl`, `btmon`, `hciconfig`,
+`hcitool`, and other CLI tools. `bluetoothd` starts automatically at boot.
+
+**Bugs found and fixed during bringup:**
+
+1. **Probe race in `btmrvl_sdio.c`:** `btmrvl_sdio_enable_host_int()` was called before
+   `card->priv` was set. Any SDIO interrupt arriving in between was silently dropped by
+   the handler (which checks `card->priv != NULL`). Fixed by moving `enable_host_int`
+   after `card->priv` and `hw_process_int_status` are initialized.
+
+2. **BT-AMP (fn=3) killing SDIO bus:** The SD8787 exposes 3 SDIO functions: fn=1 (WiFi),
+   fn=2 (BT), fn=3 (BT-AMP). btmrvl probed fn=3 and called `btmrvl_sdio_download_fw()`,
+   which held `sdio_claim_host()` for the entire firmware readiness poll (up to 100 seconds).
+   This blocked `sdio_run_irqs()` → `ack_sdio_irq()`, preventing `SDHCI_INT_CARD_INT`
+   from being re-enabled after the SDHCI IRQ handler disabled it. Result: all SDIO
+   interrupts permanently stopped — WiFi, BT, everything died. Fixed by:
+   - Removing the SD8787 BT-AMP device ID (`0x911b`) from btmrvl's SDIO ID table.
+     BT-AMP is deprecated since Bluetooth 5.0 and not needed.
+   - Releasing the SDIO host lock before the firmware readiness poll in
+     `btmrvl_sdio_download_fw()`. The poll function already does its own per-iteration
+     claim/release — the outer claim was unnecessary and harmful.
+
 #### Previous investigation (2026-02-22)
 
 Before the power sequencing was understood, the chip was observed in a stuck state
@@ -353,6 +388,9 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - **WiFi** — Marvell SD8787 via mwifiex SDIO driver. **Automatic power-on at boot**
   via `mmc-pwrseq` infrastructure (`pwrseq_vita_wlan.c`). Also controllable via
   `wlan_power` sysfs attribute.
+- **Bluetooth** — Marvell SD8787 BT via btmrvl SDIO driver. Shares firmware and power
+  sequencing with WiFi. hci0 registered, BlueZ 5 userspace (`bluetoothd`, `bluetoothctl`,
+  `btmon`, `hciconfig`, `hcitool`). Automatic at boot.
 - **SSH over WiFi** — openssh + wpa_supplicant in rootfs, auto-connects on boot.
   Available at 192.168.1.175 (ed25519 key auth). ~12s for sshd, ~20s for WiFi.
 - **Reboot + Poweroff** — `reboot` cold-resets to VitaOS, `poweroff` powers off completely.
@@ -369,8 +407,10 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
   `os0/kd/usbdev_serial.skprx` (accessible from mounted os0 partition).
 - **Vita memory card** — Uses MSIF (0xE0900000), proprietary protocol with crypto auth.
   Not standard SD. Would need custom driver.
-- **Bluetooth** — SD8787 has BT capability but only WiFi is enabled (mwifiex).
-  BT would need `CONFIG_BT`, `CONFIG_BT_MRVL`, `CONFIG_BT_MRVL_SDIO`.
+- **Bluetooth audio profiles** — Scanning, pairing, and bonding work (tested with
+  Sony WH-1000XM4). Profile connection (A2DP/HFP) fails with
+  `br-connection-profile-unavailable` because no audio daemon (PulseAudio/PipeWire)
+  is installed to act as an A2DP endpoint. Needs audio stack in rootfs.
 
 ## Modified files (from upstream xerpi)
 
@@ -402,6 +442,13 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 
 ### `drivers/i2c/busses/Kconfig` + `Makefile`
 - Added I2C_VITA config and build entries
+
+### `drivers/bluetooth/btmrvl_sdio.c` (MODIFIED)
+- Fixed probe race: moved `btmrvl_sdio_enable_host_int()` after `card->priv` initialization
+- Removed SD8787 BT-AMP device ID (`0x911b`) from SDIO ID table to prevent fn=3 from
+  blocking the SDIO bus during firmware readiness polling
+- Fixed SDIO host lock contention: release host before firmware readiness poll in
+  `btmrvl_sdio_download_fw()` — poll function does its own per-iteration claim/release
 
 ### `drivers/mmc/host/sdhci-vita.c` (NEW)
 - SDHCI platform driver for Vita's SDIF controllers
@@ -458,6 +505,8 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - `CONFIG_NLS_CODEPAGE_437=y` + `CONFIG_NLS_ISO8859_1=y` — NLS for vfat
 - `CONFIG_WIRELESS=y` + `CONFIG_CFG80211=y` + `CONFIG_MAC80211=y` — wireless networking stack
 - `CONFIG_MWIFIEX=y` + `CONFIG_MWIFIEX_SDIO=y` — Marvell WiFi-Ex SDIO driver for SD8787
+- `CONFIG_BT=y` + `CONFIG_BT_RFCOMM=y` + `CONFIG_BT_BNEP=y` + `CONFIG_BT_HIDP=y` — Bluetooth stack + profiles
+- `CONFIG_BT_MRVL=y` + `CONFIG_BT_MRVL_SDIO=y` — Marvell BT SDIO driver for SD8787
 - `CONFIG_NETDEVICES=y` + `CONFIG_WLAN=y` — network device and WLAN subsystem
 - `CONFIG_DEBUG_FS=y` — debugfs filesystem (required by mwifiex, MMC, clock, GPIO debug)
 - `CONFIG_DYNAMIC_DEBUG=y` — per-callsite `pr_debug`/`dev_dbg` control via debugfs
@@ -584,14 +633,15 @@ command 0x89B before the reset fixes this.
   constants, declared WLAN power helpers and sdhci-vita exports
 
 ## Next steps
-- **Bluetooth** — SD8787 has combined WiFi/BT. Enable `CONFIG_BT`, `CONFIG_BT_MRVL`,
-  `CONFIG_BT_MRVL_SDIO`. Firmware already loaded. Power sequencing is shared with WiFi.
+- **Bluetooth end-to-end test** — Try `bluetoothctl scan on`, pair a device, verify
+  RFCOMM/BNEP/HIDP profiles work.
 - **Audio pipeline** — Requires pervasive clock framework, I2S driver (needs RE of
   `audio.skprx`), DMAC4 driver, ASoC machine driver. Clockgen audio clock control
-  is already possible via I2C0.
+  is already possible via I2C0. WM1803E codec at I2C0 address `0x1A`.
 - **USB controller RE** — Find UDC MMIO base from os0/kd/usbstor.skprx via Ghidra.
   Would enable USB gadget networking as alternative to WiFi.
 - **SD2Vita** — Install YAMT on VitaOS, verify adapter works, then revisit Linux.
   SDIF1 currently disabled in DTS.
-- **Add tools to rootfs** — devmem2, evtest, i2c-tools, strace via buildroot packages
+- **Rootfs polish** — Fix DHCP race (wait for WPA handshake), add more tools
+  (strace, evtest, etc.)
 - **Contribute upstream** — L2 cache fix + SDHCI driver + SCE partition parser to xerpi's repo
