@@ -5,7 +5,7 @@ refs
 # Built artifacts
 *.o
 zImage
-vita1000.dtb
+*.dtb
 payload.bin
 kplugin.skprx
 plugin_loader.vpk

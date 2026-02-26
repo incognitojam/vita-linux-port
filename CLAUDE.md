@@ -12,13 +12,25 @@ See [BUILDING.md](BUILDING.md), [PROGRESS.md](PROGRESS.md), [HARDWARE.md](HARDWA
 `.gitmodules` for the configured branch, or `git -C <submodule> branch -r` to
 see the remote default. Don't assume a hardcoded branch name — verify it.
 
-## Vita
+## Devices
 
-- PCH-1103 (Vita 1000, OLED), FW 3.65 + enso, 16GB Sony memory card
-- IP: resolved from `ssh -G vita` (~/.ssh/config) — FTP on 1337, VitaCompanion TCP on 1338 (only available in VitaOS)
-- Files: `ux0:/linux/zImage`, `ux0:/linux/vita1000.dtb`, `ux0:/baremetal/payload.bin`
+### Vita 1000 (primary)
+- PCH-1103, OLED, FW 3.65 + enso, 16GB Sony memory card
+- SSH host: `vita` — FTP on 1337, VitaCompanion TCP on 1338 (only available in VitaOS)
 - SD2Vita 256GB not yet working (needs YAMT plugin)
 - tai config: `ur0:tai/config.txt`
+
+### PSTV
+- SSH host: `pstv` — FTP on 1337, VitaCompanion TCP on 1338
+- Framebuffer: 1280x720 (HDMI), vs 960x544 on Vita 1000
+- I2C1 has ADV7533 HDMI transmitter (no Linux driver yet)
+
+### Files on device (all models)
+- `ux0:/linux/zImage` — kernel with embedded rootfs
+- `ux0:/linux/vita1000.dtb`, `vita2000.dtb`, `pstv.dtb` — device trees (loader auto-selects)
+- `ux0:/baremetal/payload.bin` — baremetal linux loader
+- `ux0:/data/tai/kplugin.skprx` — baremetal loader kernel plugin
+- Plugin Loader VPK installed as app
 
 ## Buildroot VM
 
@@ -30,6 +42,8 @@ see the remote default. Don't assume a hardcoded branch name — verify it.
 ## Workflow
 
 `make deploy` — full pipeline: build → push → boot. See `make help` for all targets.
+
+Target a different device with `VITA_HOST=`: `make deploy VITA_HOST=pstv`
 
 1. Edit files in `linux_vita/`
 2. `make deploy` (or `make build`, `make dtb`, `make push`, `make boot` individually)

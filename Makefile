@@ -1,16 +1,36 @@
 # Vita Linux Port — local orchestration Makefile
 # Builds locally (macOS with LLVM/Clang, Linux with Bootlin GCC), deploys to Vita
+#
+# Multi-device support:
+#   VITA_HOST  — SSH config host name (default: vita). Override for PSTV etc.
+#   VITA_IP    — override IP directly (skips SSH config lookup)
+#
+# Examples:
+#   make deploy                          # default "vita" host
+#   make deploy VITA_HOST=pstv           # target PSTV (needs Host pstv in SSH config)
+#   make push VITA_IP=192.168.1.100      # push to explicit IP
+#   make push-setup VITA_HOST=pstv       # one-time device setup (VPK + loader files)
 
-VITA_IP   := $(shell ssh -G vita 2>/dev/null | awk '/^hostname / {print $$2}')
+VITA_HOST ?= vita
+
+ifndef VITA_IP
+  _SSH_HOSTNAME := $(shell ssh -G $(VITA_HOST) 2>/dev/null | awk '/^hostname / {print $$2}')
+  # ssh -G returns the literal host alias when no Host block matches — detect that
+  # by checking whether the result looks like an IP address
+  VITA_IP := $(shell echo '$(_SSH_HOSTNAME)' | grep -Eo '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$$')
+endif
 ifeq ($(VITA_IP),)
-  $(error Could not resolve VITA_IP — add "Host vita" to ~/.ssh/config)
+  $(error Could not resolve VITA_IP — add "Host $(VITA_HOST)" with a HostName IP to ~/.ssh/config, or pass VITA_IP=x.x.x.x)
 endif
 FTP_PORT  := 1337
 CMD_PORT  := 1338
+NC        := nc
 
 LOCAL_KERNEL_DIR := linux_vita
 ZIMAGE           := $(LOCAL_KERNEL_DIR)/arch/arm/boot/zImage
-DTB              := $(LOCAL_KERNEL_DIR)/arch/arm/boot/dts/vita1000.dtb
+DTS_DIR          := $(LOCAL_KERNEL_DIR)/arch/arm/boot/dts
+VITA_MODELS      := vita1000 vita2000 pstv
+DTBS             := $(foreach m,$(VITA_MODELS),$(DTS_DIR)/$(m).dtb)
 
 # --- Platform detection ---
 
@@ -44,11 +64,11 @@ else
   endif
 endif
 
-.PHONY: config savedefconfig build build-zimage build-dtb dtb push boot deploy help watch serial lsp clean
+.PHONY: config savedefconfig build build-zimage build-dtb dtb push push-setup boot deploy help watch serial lsp clean
 
 help: ## show this help
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | \
-		awk -F ':.*## ' '{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+		awk -F ':.*## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 # ------- Config -------
 
@@ -75,7 +95,7 @@ clean: ## remove kernel build artifacts (works around macOS case-sensitivity bug
 	@find $(LOCAL_KERNEL_DIR) \( -name '*.o' -o -name '*.o.cmd' -o -name '*.ko' \
 		-o -name '.*.cmd' -o -name '*.a' -o -name '*.order' -o -name '*.symvers' \) \
 		-delete 2>/dev/null || true
-	@rm -f $(ZIMAGE) $(LOCAL_KERNEL_DIR)/vmlinux $(LOCAL_KERNEL_DIR)/System.map
+	@rm -f $(ZIMAGE) $(DTBS) $(LOCAL_KERNEL_DIR)/vmlinux $(LOCAL_KERNEL_DIR)/System.map
 	@echo "Clean complete"
 
 # ------- Build -------
@@ -85,11 +105,14 @@ build: $(KCONFIG) build-zimage build-dtb ## compile zImage + DTB locally
 build-zimage:
 	$(KMAKE) -C $(LOCAL_KERNEL_DIR) zImage -j$(NPROC)
 
-build-dtb dtb: ## compile device tree only
-	cd $(LOCAL_KERNEL_DIR) && \
+build-dtb dtb: ## compile all device trees (vita1000, vita2000, pstv)
+	@for model in $(VITA_MODELS); do \
+		echo "  DTB     $$model.dtb"; \
+		(cd $(LOCAL_KERNEL_DIR) && \
 		$(CPP) -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
-			-undef -x assembler-with-cpp arch/arm/boot/dts/vita1000.dts | \
-		scripts/dtc/dtc -I dts -O dtb -o arch/arm/boot/dts/vita1000.dtb -
+			-undef -x assembler-with-cpp arch/arm/boot/dts/$$model.dts | \
+		scripts/dtc/dtc -I dts -O dtb -o arch/arm/boot/dts/$$model.dtb -) || exit 1; \
+	done
 
 # ------- LSP / clangd -------
 
@@ -111,19 +134,37 @@ lsp: build ## generate compile_commands.json + .clangd for clangd
 
 # ------- Transfer -------
 
-push: ## upload zImage + DTB to Vita via FTP
-	curl -s -T $(ZIMAGE) "ftp://$(VITA_IP):$(FTP_PORT)/ux0:/linux/zImage"
-	curl -s -T $(DTB) "ftp://$(VITA_IP):$(FTP_PORT)/ux0:/linux/vita1000.dtb"
+push: ## upload zImage + all DTBs to Vita via FTP
+	curl -s --ftp-create-dirs -T $(ZIMAGE) "ftp://$(VITA_IP):$(FTP_PORT)/ux0:/linux/zImage"
+	@for model in $(VITA_MODELS); do \
+		echo "  PUSH    $$model.dtb"; \
+		curl -s --ftp-create-dirs -T $(DTS_DIR)/$$model.dtb "ftp://$(VITA_IP):$(FTP_PORT)/ux0:/linux/$$model.dtb" || exit 1; \
+	done
+
+LOADER_PLUGIN := kplugin.skprx
+LOADER_PAYLOAD := payload.bin
+LOADER_VPK := plugin_loader.vpk
+
+push-setup: ## one-time setup: push loader files + VPK to a new device
+	@echo "Pushing bootstrap files to $(VITA_IP)..."
+	curl -s --ftp-create-dirs -T $(LOADER_PLUGIN) "ftp://$(VITA_IP):$(FTP_PORT)/ux0:/data/tai/kplugin.skprx"
+	curl -s --ftp-create-dirs -T $(LOADER_PAYLOAD) "ftp://$(VITA_IP):$(FTP_PORT)/ux0:/baremetal/payload.bin"
+	curl -s --ftp-create-dirs -T $(LOADER_VPK) "ftp://$(VITA_IP):$(FTP_PORT)/ux0:/plugin_loader.vpk"
+	@echo ""
+	@echo "Done. Loader + payload are in place."
+	@echo "  1. Install ux0:/plugin_loader.vpk via VitaShell (one-time)"
+	@echo "  2. Run 'make push' to upload the kernel + DTBs"
+	@echo "  3. Launch Plugin Loader from LiveArea (or 'make boot') to boot Linux"
 
 # ------- Boot -------
 
 boot: ## launch Plugin Loader on Vita (boots Linux)
-	@echo "destroy" | nc -w 3 $(VITA_IP) $(CMD_PORT) > /dev/null 2>&1 || \
+	@echo "destroy" | $(NC) -w 3 $(VITA_IP) $(CMD_PORT) > /dev/null 2>&1 || \
 		{ echo "Vita not reachable on port $(CMD_PORT) — is it in VitaOS?"; exit 1; }; \
 	start_line=$$(wc -l < logs/latest.log 2>/dev/null | tr -d ' ' || echo 0); \
 	sleep 1; \
 	echo "Launching Plugin Loader..."; \
-	echo "launch PLGINLDR0" | nc -w 3 $(VITA_IP) $(CMD_PORT); \
+	echo "launch PLGINLDR0" | $(NC) -w 3 $(VITA_IP) $(CMD_PORT); \
 	./boot_watch.sh $$start_line
 
 watch: ## watch an in-progress boot
