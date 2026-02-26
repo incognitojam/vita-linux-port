@@ -304,17 +304,13 @@ probe time (466 KB). No separate BT firmware file needed.
    the handler (which checks `card->priv != NULL`). Fixed by moving `enable_host_int`
    after `card->priv` and `hw_process_int_status` are initialized.
 
-2. **BT-AMP (fn=3) killing SDIO bus:** The SD8787 exposes 3 SDIO functions: fn=1 (WiFi),
-   fn=2 (BT), fn=3 (BT-AMP). btmrvl probed fn=3 and called `btmrvl_sdio_download_fw()`,
-   which held `sdio_claim_host()` for the entire firmware readiness poll (up to 100 seconds).
-   This blocked `sdio_run_irqs()` → `ack_sdio_irq()`, preventing `SDHCI_INT_CARD_INT`
-   from being re-enabled after the SDHCI IRQ handler disabled it. Result: all SDIO
-   interrupts permanently stopped — WiFi, BT, everything died. Fixed by:
-   - Removing the SD8787 BT-AMP device ID (`0x911b`) from btmrvl's SDIO ID table.
-     BT-AMP is deprecated since Bluetooth 5.0 and not needed.
-   - Releasing the SDIO host lock before the firmware readiness poll in
-     `btmrvl_sdio_download_fw()`. The poll function already does its own per-iteration
-     claim/release — the outer claim was unnecessary and harmful.
+2. **Host lock starvation in `btmrvl_sdio_download_fw()`:** `sdio_claim_host()` was
+   held across the entire firmware readiness poll (up to 100 seconds). This blocked
+   `sdio_run_irqs()` → `ack_sdio_irq()`, preventing `SDHCI_INT_CARD_INT` from being
+   re-enabled after the SDHCI IRQ handler disabled it. On the SD8787, BT-AMP fn=3
+   triggered this path and permanently killed all SDIO interrupts — WiFi, BT,
+   everything died. Fixed by releasing the host lock before the poll phase;
+   `btmrvl_sdio_verify_fw_download()` already does per-iteration claim/release.
 
 #### Previous investigation (2026-02-22)
 
@@ -445,9 +441,7 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 
 ### `drivers/bluetooth/btmrvl_sdio.c` (MODIFIED)
 - Fixed probe race: moved `btmrvl_sdio_enable_host_int()` after `card->priv` initialization
-- Removed SD8787 BT-AMP device ID (`0x911b`) from SDIO ID table to prevent fn=3 from
-  blocking the SDIO bus during firmware readiness polling
-- Fixed SDIO host lock contention: release host before firmware readiness poll in
+- Fixed SDIO host lock starvation: release host before firmware readiness poll in
   `btmrvl_sdio_download_fw()` — poll function does its own per-iteration claim/release
 
 ### `drivers/mmc/host/sdhci-vita.c` (NEW)
