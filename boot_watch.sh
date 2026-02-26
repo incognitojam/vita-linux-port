@@ -28,16 +28,16 @@ stage_elapsed() {
 }
 
 # Per-stage timeouts (seconds since previous stage)
-#   Observed deltas: 8s, 1s, 13s, 1s, 5s, 2s — totals ~30s
-#   Timeouts set to ~2x observed to allow variance
+#   Observed with ~22MB zImage: 8s, 1s, 2s, 25s, 3s, 12s, 8s — totals ~60s
+#   Timeouts set generously to allow for FTP upload variance and WiFi association
 #   0: waiting for baremetal loader     — 15s (vita app launch + standby)
 #   1: waiting for linux loader         — 10s (device reset + loader start)
 #   2: waiting for zImage load          —  5s
-#   3: waiting for jump to linux        — 25s (loading 15MB zImage from SD)
-#   4: waiting for kernel boot msg      —  5s (decompression)
-#   5: waiting for userspace init       — 20s (kernel init + drivers)
-#   6: waiting for login prompt         — 15s (userspace services)
-stage_timeouts=(15 10 5 25 5 20 15)
+#   3: waiting for jump to linux        — 45s (loading ~22MB zImage from SD)
+#   4: waiting for kernel boot msg      — 10s (decompression)
+#   5: waiting for userspace init       — 30s (kernel init + drivers)
+#   6: waiting for login prompt         — 30s (userspace services + wifi)
+stage_timeouts=(15 10 5 45 10 30 30)
 
 seen=0
 
