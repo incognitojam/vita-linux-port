@@ -2,26 +2,18 @@
 # Builds locally (macOS with LLVM/Clang, Linux with Bootlin GCC), deploys to Vita
 #
 # Multi-device support:
-#   VITA_HOST  — SSH config host name (default: vita). Override for PSTV etc.
-#   VITA_IP    — override IP directly (skips SSH config lookup)
+#   VITA_HOST  — hostname or IP of the Vita (default: vita)
+#   VITA_IP    — alias for VITA_HOST (legacy / explicit IP override)
+#
+# Set the DHCP hostname on the Vita's Wi-Fi config to "vita" so it resolves by name.
 #
 # Examples:
 #   make deploy                          # default "vita" host
-#   make deploy VITA_HOST=pstv           # target PSTV (needs Host pstv in SSH config)
+#   make deploy VITA_HOST=pstv           # target PSTV
 #   make push VITA_IP=192.168.1.100      # push to explicit IP
-#   make push-setup VITA_HOST=pstv       # one-time device setup (VPK + loader files)
 
 VITA_HOST ?= vita
-
-ifndef VITA_IP
-  _SSH_HOSTNAME := $(shell ssh -G $(VITA_HOST) 2>/dev/null | awk '/^hostname / {print $$2}')
-  # ssh -G returns the literal host alias when no Host block matches — detect that
-  # by checking whether the result looks like an IP address
-  VITA_IP := $(shell echo '$(_SSH_HOSTNAME)' | grep -Eo '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$$')
-endif
-ifeq ($(VITA_IP),)
-  $(error Could not resolve VITA_IP — add "Host $(VITA_HOST)" with a HostName IP to ~/.ssh/config, or pass VITA_IP=x.x.x.x)
-endif
+VITA_IP   ?= $(VITA_HOST)
 FTP_PORT  := 1337
 CMD_PORT  := 1338
 NC        := nc
