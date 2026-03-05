@@ -74,8 +74,8 @@ ifeq ($(UNAME_S),Darwin)
     KMAKE += CC="ccache clang" HOSTCC="ccache clang"
   endif
 else
-  # Linux: Bootlin cross-compiler (arm-linux-* must be on PATH)
-  CROSS_COMPILE ?= arm-linux-
+  # Linux: Bootlin cross-compiler (arm-buildroot-linux-gnueabihf-* must be on PATH)
+  CROSS_COMPILE ?= arm-buildroot-linux-gnueabihf-
   KMAKE         := make ARCH=arm CROSS_COMPILE=$(CROSS_COMPILE)
   CPP           := $(CROSS_COMPILE)cpp
   NPROC         := $(shell nproc)

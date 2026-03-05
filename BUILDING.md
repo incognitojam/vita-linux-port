@@ -24,13 +24,14 @@ brew install llvm lld libelf make findutils gnu-sed
 Install the [Bootlin](https://toolchains.bootlin.com/) ARMv7 cross-compiler:
 
 ```bash
-# Download and extract (adjust version as needed)
+# Download and extract (anywhere you like)
 BOOTLIN_VERSION=2025.08-1
+mkdir -p ~/toolchains
 curl -fsSL "https://toolchains.bootlin.com/downloads/releases/toolchains/armv7-eabihf/tarballs/armv7-eabihf--glibc--bleeding-edge-${BOOTLIN_VERSION}.tar.xz" | \
-  sudo tar -xJC /opt
+  tar -xJC ~/toolchains
 
 # Add to PATH (add to your .bashrc/.zshrc for persistence)
-export PATH="/opt/armv7-eabihf--glibc--bleeding-edge-${BOOTLIN_VERSION}/bin:$PATH"
+export PATH="$HOME/toolchains/armv7-eabihf--glibc--bleeding-edge-${BOOTLIN_VERSION}/bin:$PATH"
 ```
 
 You also need standard build dependencies:
