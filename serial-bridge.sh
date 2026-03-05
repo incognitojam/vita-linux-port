@@ -208,8 +208,13 @@ REMOTE_LOG="${REMOTE_DIR}/logs/latest.log"
 # Ensure remote dir exists
 ssh -o ConnectTimeout=10 "$VM_HOST" "mkdir -p '${REMOTE_DIR}/logs'"
 
+# --checksum: detect changes by content, not just size+mtime (handles
+#   serial_log.py restarts where the new file may be smaller)
+# --inplace: overwrite the file directly (no temp file + rename, which
+#   could confuse scripts reading the file mid-transfer)
+# -L: follow symlinks (logs/latest.log is a symlink)
 (while true; do
-  rsync -Lq "$LOCAL_LOG" "${VM_HOST}:${REMOTE_LOG}" 2>/dev/null || true
+  rsync -Lq --checksum --inplace "$LOCAL_LOG" "${VM_HOST}:${REMOTE_LOG}" 2>/dev/null || true
   sleep 0.5
 done) &
 LOG_SYNC_PID=$!
