@@ -156,7 +156,7 @@ ssh -o ConnectTimeout=10 \
     -o ExitOnForwardFailure=yes \
     -R "127.0.0.1:${RELAY_PORT}:127.0.0.1:${RELAY_PORT}" \
     "$VM_HOST" \
-    bash -s -- "$RELAY_PORT" "$REMOTE_PID_FILE" <<'REMOTE_SCRIPT'
+    bash -s -- "$RELAY_PORT" "$REMOTE_PID_FILE" <<'REMOTE_SCRIPT' &
 RELAY_PORT="$1"
 PID_FILE="$2"
 
