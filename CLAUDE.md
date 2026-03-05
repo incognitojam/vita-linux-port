@@ -102,8 +102,8 @@ TCP command interface: `echo "cmd" | nc <VITA_IP> 1338`
 ### Remote serial bridge
 
 When the build VM is not on the same network as the Vita / does not have the
-Tigard attached, `serial-bridge.sh` bridges the serial console from the Mac
-(where `serial_log.py` and the Tigard run) to the VM over SSH.
+serial adapter attached, `serial-bridge.sh` bridges the serial console from the Mac
+(where `serial_log.py` and the UART adapter run) to the VM over SSH.
 
 Run on the Mac:
 ```sh

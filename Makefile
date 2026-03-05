@@ -230,7 +230,7 @@ boot: ## launch Plugin Loader on Vita (boots Linux)
 watch: ## watch an in-progress boot
 	@./boot_watch.sh
 
-serial: ## start serial console (Tigard)
+serial: ## start serial console (UART)
 	./serial_log.py
 
 serial-bridge: ## bridge local serial to a remote VM (run on Mac)

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # serial-bridge.sh — bridge serial console from this Mac to a remote build VM.
 #
-# Runs on the Mac where serial_log.py + Tigard are local. Creates a transparent
+# Runs on the Mac where serial_log.py + the UART adapter are local. Creates a transparent
 # bridge so that the VM's boot_watch.sh, vita_cmd.sh, and Makefile targets
 # work as if the serial adapter were attached locally.
 #
@@ -48,7 +48,7 @@ while [[ $# -gt 0 ]]; do
     --help|-h)
       echo "Usage: $0 <vm-host> [--remote-dir /path/on/vm] [--relay-port PORT]"
       echo ""
-      echo "Bridge local serial console (Tigard + serial_log.py) to a remote build VM."
+      echo "Bridge local serial console (serial_log.py) to a remote build VM."
       echo "Requires serial_log.py to be running locally."
       exit 0
       ;;

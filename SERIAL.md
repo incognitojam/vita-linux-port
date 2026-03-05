@@ -1,11 +1,11 @@
 # serial_log.py
 
-Bidirectional serial console for the [Tigard](https://github.com/tigard-tools/tigard) with logging. Runs via `uv` with no manual dependency install.
+Bidirectional serial console with logging. Auto-detects common USB-UART adapters (e.g. [Tigard](https://github.com/tigard-tools/tigard), FTDI). Runs via `uv` with no manual dependency install.
 
 ## Usage
 
 ```bash
-./serial_log.py              # auto-detect Tigard, pick channel interactively
+./serial_log.py              # auto-detect adapter, pick channel interactively
 ./serial_log.py -c 0         # skip prompt, use UART (channel 0)
 ./serial_log.py -b 9600      # custom baud rate (default: 115200)
 ./serial_log.py -o boot.log  # custom log file (default: logs/serial_TIMESTAMP.log)
@@ -37,4 +37,4 @@ cat logs/latest.log          # read the full log
 
 - Log file is written continuously
 - On macOS, only `cu.*` devices are used (`tty.*` block on open waiting for DCD)
-- Tigard channel 0 = UART header, channel 1 = JTAG/SWD header
+- Multi-channel adapters: channel 0 = UART, channel 1 = JTAG/SWD
