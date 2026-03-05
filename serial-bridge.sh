@@ -199,23 +199,27 @@ sleep 1
 # --- Component 2: Log streaming (Mac → VM) ---
 #
 # Stream the local serial log to the VM in real-time.
-# Uses tail -f on the resolved log file (not the symlink) for reliability.
-# First cat dumps existing content, then tail -f follows new output.
-# If serial_log.py restarts, the bridge must be restarted too.
+# Resolve the symlink to the actual log file, then use rsync with --append
+# in a polling loop for reliable, low-latency transfer without SSH buffering
+# issues (SSH stdin piping buffers aggressively in non-tty mode).
 
 LOG_TARGET=$(readlink "$LOCAL_LOG" 2>/dev/null || echo "$LOCAL_LOG")
 if [[ ! "$LOG_TARGET" = /* ]]; then
   LOG_TARGET="$(dirname "$LOCAL_LOG")/$LOG_TARGET"
 fi
+REMOTE_LOG="${REMOTE_DIR}/logs/latest.log"
 
-ssh -o ConnectTimeout=10 \
-    -o ServerAliveInterval=15 \
-    -o ServerAliveCountMax=3 \
-    "$VM_HOST" \
-    "mkdir -p '${REMOTE_DIR}/logs' && exec cat > '${REMOTE_DIR}/logs/latest.log'" \
-    < <(cat "$LOG_TARGET" && exec tail -f -n 0 "$LOG_TARGET") &
-LOG_SSH_PID=$!
-PIDS+=($LOG_SSH_PID)
+# Ensure remote dir exists
+ssh -o ConnectTimeout=10 "$VM_HOST" "mkdir -p '${REMOTE_DIR}/logs'"
+
+# Polling rsync: syncs the log file every 0.5s. rsync --append only sends
+# new bytes, so each iteration is fast. This avoids SSH pipe buffering entirely.
+(while true; do
+  rsync -q "$LOG_TARGET" "${VM_HOST}:${REMOTE_LOG}" 2>/dev/null || true
+  sleep 0.5
+done) &
+LOG_SYNC_PID=$!
+PIDS+=($LOG_SYNC_PID)
 
 echo -e "${GREEN}[log]${RESET}  Streaming ${LOCAL_LOG} → ${VM_HOST}:${REMOTE_DIR}/logs/latest.log"
 
@@ -231,7 +235,7 @@ echo -e "Press Ctrl+C to stop the bridge."
 # --- Wait for any component to exit ---
 # If either SSH session dies, the bridge is broken — clean up and exit.
 while true; do
-  for pid in "$PIPE_SSH_PID" "$LOG_SSH_PID"; do
+  for pid in "$PIPE_SSH_PID" "$LOG_SYNC_PID"; do
     if ! kill -0 "$pid" 2>/dev/null; then
       echo -e "\n${RED}Bridge component (PID $pid) exited unexpectedly.${RESET}"
       exit 1
