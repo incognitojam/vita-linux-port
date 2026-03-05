@@ -14,5 +14,8 @@ plugin_loader.vpk
 logs/
 logs
 
+# Worktree kernel dir override (per-worktree, not committed)
+.linux-vita-dir
+
 # Claude Code
 .claude/

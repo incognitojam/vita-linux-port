@@ -2,9 +2,13 @@
 # Run once after cloning linux_vita/ on macOS (case-insensitive filesystem).
 # Hides 13 files that have case-only counterparts in the kernel tree,
 # which macOS can't distinguish, producing spurious git diffs.
+#
+# Usage: fix_case_sensitivity.sh [kernel-dir]
+#   kernel-dir defaults to ./linux_vita relative to the script's location.
 set -euo pipefail
 
-cd "$(dirname "$0")/linux_vita"
+KERNEL_DIR="${1:-$(dirname "$0")/linux_vita}"
+cd "$KERNEL_DIR"
 
 for f in \
     include/uapi/linux/netfilter/xt_CONNMARK.h \

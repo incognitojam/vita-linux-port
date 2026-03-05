@@ -1,6 +1,6 @@
 # Vita Linux Port
 
-See [BUILDING.md](BUILDING.md), [PROGRESS.md](PROGRESS.md), [HARDWARE.md](HARDWARE.md).
+See [BUILDING.md](BUILDING.md), [PROGRESS.md](PROGRESS.md), [HARDWARE.md](HARDWARE.md), [WORKFLOW.md](WORKFLOW.md).
 
 ## Layout
 
@@ -45,10 +45,22 @@ see the remote default. Don't assume a hardcoded branch name — verify it.
 
 Target a different device with `VITA_HOST=`: `make deploy VITA_HOST=pstv`
 
-1. Edit files in `linux_vita/`
+1. Edit files in `linux_vita/` (or a kernel worktree — see [WORKFLOW.md](WORKFLOW.md))
 2. `make deploy` (or `make build`, `make dtb`, `make push`, `make boot` individually)
 3. After boot: `./vita_cmd.sh "command"` to run commands on Vita over serial
 4. Reboot to VitaOS: `./vita_cmd.sh "reboot"` — cold reset, vitacompanion auto-starts
+
+### Worktree development
+
+See [WORKFLOW.md](WORKFLOW.md) for the full three-tier worktree model. Key commands:
+
+- `make kernel-worktree NAME=<feature>` — create kernel worktree for driver/feature work
+- `make kernel-use NAME=<wt>` — switch which kernel dir the current worktree builds against
+- `make worktree NAME=<branch>` — create outer worktree for scripts/docs/agents
+- `make kernel-bump` — pin linux_vita submodule to a commit (integration lane)
+- `make setup-cache` — one-time: create bare cache for fast clones/fetches
+
+The kernel directory is resolved via: `LINUX_VITA_DIR` env/arg → `.linux-vita-dir` file → `./linux_vita`.
 
 ### Git workflow
 
