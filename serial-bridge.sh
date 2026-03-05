@@ -129,17 +129,17 @@ echo -e "  Remote dir: ${REMOTE_DIR}"
 echo ""
 
 # Start local listener: TCP → pipe writer (binds to loopback only)
-if command -v socat &>/dev/null; then
-  socat "TCP-LISTEN:${RELAY_PORT},bind=127.0.0.1,reuseaddr,fork" \
-        "OPEN:${LOCAL_PIPE},wronly" &
-  PIDS+=($!)
-else
-  # Fallback: netcat-based relay (macOS nc uses positional args for host/port)
-  (while true; do
-    nc -l "$RELAY_PORT" >> "$LOCAL_PIPE" 2>/dev/null || true
-  done) &
-  PIDS+=($!)
-fi
+# Each incoming connection delivers one command batch to the FIFO.
+# The subshell opens the pipe once (>> holds the fd), so individual
+# nc/socat iterations don't need to reopen it (avoids FIFO race conditions).
+(exec >> "$LOCAL_PIPE" 2>/dev/null; while true; do
+  if command -v socat &>/dev/null; then
+    socat -u "TCP-LISTEN:${RELAY_PORT},bind=127.0.0.1,reuseaddr" STDOUT
+  else
+    nc -l "$RELAY_PORT"
+  fi || true
+done) &
+PIDS+=($!)
 
 echo -e "${GREEN}[pipe]${RESET} Relay listening on 127.0.0.1:${RELAY_PORT} → ${LOCAL_PIPE}"
 
