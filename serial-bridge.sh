@@ -199,16 +199,21 @@ sleep 1
 # --- Component 2: Log streaming (Mac → VM) ---
 #
 # Stream the local serial log to the VM in real-time.
-# Uses tail -F (follow by name) so it handles serial_log.py restarts
-# (which repoint the logs/latest.log symlink to a new file).
-# -n +1 sends from the beginning of the current file.
+# Uses tail -f on the resolved log file (not the symlink) for reliability.
+# First cat dumps existing content, then tail -f follows new output.
+# If serial_log.py restarts, the bridge must be restarted too.
+
+LOG_TARGET=$(readlink "$LOCAL_LOG" 2>/dev/null || echo "$LOCAL_LOG")
+if [[ ! "$LOG_TARGET" = /* ]]; then
+  LOG_TARGET="$(dirname "$LOCAL_LOG")/$LOG_TARGET"
+fi
 
 ssh -o ConnectTimeout=10 \
     -o ServerAliveInterval=15 \
     -o ServerAliveCountMax=3 \
     "$VM_HOST" \
     "mkdir -p '${REMOTE_DIR}/logs' && exec cat > '${REMOTE_DIR}/logs/latest.log'" \
-    < <(exec tail -F -n +1 "$LOCAL_LOG") &
+    < <(cat "$LOG_TARGET" && exec tail -f -n 0 "$LOG_TARGET") &
 LOG_SSH_PID=$!
 PIDS+=($LOG_SSH_PID)
 
