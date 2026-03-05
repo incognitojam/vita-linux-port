@@ -198,24 +198,18 @@ sleep 1
 
 # --- Component 2: Log streaming (Mac → VM) ---
 #
-# Stream the local serial log to the VM in real-time.
-# Resolve the symlink to the actual log file, then use rsync with --append
-# in a polling loop for reliable, low-latency transfer without SSH buffering
-# issues (SSH stdin piping buffers aggressively in non-tty mode).
+# Stream the local serial log to the VM in real-time via polling rsync.
+# -L follows the logs/latest.log symlink to the actual log file.
+# Polls every 0.5s — rsync only transfers changed bytes, so each call is fast.
+# This avoids SSH pipe buffering issues entirely.
 
-LOG_TARGET=$(readlink "$LOCAL_LOG" 2>/dev/null || echo "$LOCAL_LOG")
-if [[ ! "$LOG_TARGET" = /* ]]; then
-  LOG_TARGET="$(dirname "$LOCAL_LOG")/$LOG_TARGET"
-fi
 REMOTE_LOG="${REMOTE_DIR}/logs/latest.log"
 
 # Ensure remote dir exists
 ssh -o ConnectTimeout=10 "$VM_HOST" "mkdir -p '${REMOTE_DIR}/logs'"
 
-# Polling rsync: syncs the log file every 0.5s. rsync --append only sends
-# new bytes, so each iteration is fast. This avoids SSH pipe buffering entirely.
 (while true; do
-  rsync -q "$LOG_TARGET" "${VM_HOST}:${REMOTE_LOG}" 2>/dev/null || true
+  rsync -Lq "$LOCAL_LOG" "${VM_HOST}:${REMOTE_LOG}" 2>/dev/null || true
   sleep 0.5
 done) &
 LOG_SYNC_PID=$!
