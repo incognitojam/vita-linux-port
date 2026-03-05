@@ -109,7 +109,7 @@ CACHE_REMOTES := \
 	upstream=https://github.com/xerpi/linux_vita.git \
 	techflashYT=https://github.com/techflashYT/linux-custom.git
 
-.PHONY: config savedefconfig build build-zimage build-dtb dtb push push-setup boot deploy help watch serial lsp clean
+.PHONY: config savedefconfig build build-zimage build-dtb dtb push push-setup boot deploy help watch serial serial-bridge lsp clean
 .PHONY: setup-cache update-cache worktree kernel-worktree kernel-use kernel-bump setup-git-config
 
 help: ## show this help
@@ -232,6 +232,14 @@ watch: ## watch an in-progress boot
 
 serial: ## start serial console (Tigard)
 	./serial_log.py
+
+serial-bridge: ## bridge local serial to a remote VM (run on Mac)
+	@if [ -z "$(BUILD_HOST)" ]; then \
+		echo "Usage: make serial-bridge BUILD_HOST=<vm-hostname>"; \
+		echo "  Bridges local serial console to a remote build VM."; \
+		exit 1; \
+	fi
+	./serial-bridge.sh $(BUILD_HOST)
 
 # ------- Full pipeline (with device locking) -------
 

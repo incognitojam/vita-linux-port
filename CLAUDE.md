@@ -95,8 +95,32 @@ TCP command interface: `echo "cmd" | nc <VITA_IP> 1338`
 
 - `serial_log.py` — serial console (must be running in another terminal for boot/vita_cmd)
   - Logs: `logs/latest.log`; send input: `printf 'cmd\n' > /tmp/serial.pipe`
+- `serial-bridge.sh <vm-host>` — bridge local serial to a remote build VM (see below)
 - `boot_watch.sh` — monitors boot progress, auto-login; called by `make boot`, standalone via `make watch`
 - `vita_cmd.sh "cmd" [timeout]` — run command on Vita, blocks until prompt returns
+
+### Remote serial bridge
+
+When the build VM is not on the same network as the Vita / does not have the
+Tigard attached, `serial-bridge.sh` bridges the serial console from the Mac
+(where `serial_log.py` and the Tigard run) to the VM over SSH.
+
+Run on the Mac:
+```sh
+./serial-bridge.sh <vm-ssh-host>
+# or: make serial-bridge BUILD_HOST=<vm-ssh-host>
+```
+
+This creates a transparent bridge — the VM gets a real `/tmp/serial.pipe` and
+`logs/latest.log` so that `make boot`, `make deploy`, `boot_watch.sh`, and
+`vita_cmd.sh` all work unmodified.
+
+How it works:
+- **Log stream (Mac → VM):** `tail -F logs/latest.log` piped over SSH to the VM
+- **Pipe relay (VM → Mac):** SSH reverse tunnel + FIFO relay on the VM; writes
+  to `/tmp/serial.pipe` on the VM are forwarded back to the Mac's pipe
+
+Prerequisites: `serial_log.py` running on the Mac, SSH key auth to the VM.
 
 ## Decrypted os0 Modules (`refs/vita-os0`)
 
