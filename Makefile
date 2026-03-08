@@ -37,7 +37,8 @@ endif
 
 LOCAL_KERNEL_DIR := $(LINUX_VITA_DIR)
 ZIMAGE           := $(LOCAL_KERNEL_DIR)/arch/arm/boot/zImage
-DTS_DIR          := $(LOCAL_KERNEL_DIR)/arch/arm/boot/dts
+DTS_PATH         := arch/arm/boot/dts/sony
+DTS_DIR          := $(LOCAL_KERNEL_DIR)/$(DTS_PATH)
 VITA_MODELS      := vita1000 vita2000 pstv
 DTBS             := $(foreach m,$(VITA_MODELS),$(DTS_DIR)/$(m).dtb)
 
@@ -167,9 +168,9 @@ build-dtb dtb: ## compile all device trees (vita1000, vita2000, pstv)
 	@for model in $(VITA_MODELS); do \
 		echo "  DTB     $$model.dtb"; \
 		(cd $(LOCAL_KERNEL_DIR) && \
-		$(CPP) -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
-			-undef -x assembler-with-cpp arch/arm/boot/dts/$$model.dts | \
-		scripts/dtc/dtc -I dts -O dtb -o arch/arm/boot/dts/$$model.dtb -) || exit 1; \
+		$(CPP) -nostdinc -I include -I arch/arm/boot/dts -I $(DTS_PATH) -I include/dt-bindings \
+			-undef -x assembler-with-cpp $(DTS_PATH)/$$model.dts | \
+		scripts/dtc/dtc -I dts -O dtb -o $(DTS_PATH)/$$model.dtb -) || exit 1; \
 	done
 
 # ------- LSP / clangd -------
