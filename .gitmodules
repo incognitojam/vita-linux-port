@@ -10,3 +10,6 @@
 	path = fastfetch
 	url = https://github.com/incognitojam/fastfetch.git
 	branch = dev
+[submodule "buildroot"]
+	path = buildroot
+	url = https://github.com/buildroot/buildroot.git

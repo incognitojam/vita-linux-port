@@ -1,0 +1,50 @@
+#!/bin/sh
+#
+# Start PipeWire audio daemon and WirePlumber session manager.
+# Runs as root (single-user embedded system).
+# Uses the default /usr/share/pipewire/pipewire.conf shipped by the package.
+#
+
+PIPEWIRE_BIN=/usr/bin/pipewire
+WIREPLUMBER_BIN=/usr/bin/wireplumber
+PIDDIR=/var/run
+
+# PipeWire expects XDG_RUNTIME_DIR to exist and be owned by the user
+export XDG_RUNTIME_DIR=/run/user/0
+
+case "$1" in
+	start)
+		mkdir -p "$XDG_RUNTIME_DIR"
+		chmod 700 "$XDG_RUNTIME_DIR"
+
+		printf "Starting PipeWire: "
+		start-stop-daemon -S -b -m -p "$PIDDIR/pipewire.pid" \
+			-x "$PIPEWIRE_BIN" -- 2>/dev/null
+		echo "OK"
+
+		# Small delay to let PipeWire socket appear
+		sleep 1
+
+		printf "Starting WirePlumber: "
+		start-stop-daemon -S -b -m -p "$PIDDIR/wireplumber.pid" \
+			-x "$WIREPLUMBER_BIN" -- 2>/dev/null
+		echo "OK"
+		;;
+	stop)
+		printf "Stopping WirePlumber: "
+		start-stop-daemon -K -p "$PIDDIR/wireplumber.pid" 2>/dev/null
+		echo "OK"
+
+		printf "Stopping PipeWire: "
+		start-stop-daemon -K -p "$PIDDIR/pipewire.pid" 2>/dev/null
+		echo "OK"
+		;;
+	restart)
+		"$0" stop
+		"$0" start
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart}"
+		exit 1
+		;;
+esac

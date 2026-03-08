@@ -1,0 +1,6 @@
+# Vita sshd config
+PermitRootLogin prohibit-password
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+PasswordAuthentication no
+Subsystem sftp /usr/libexec/sftp-server

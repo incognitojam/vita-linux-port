@@ -23,7 +23,7 @@ vita-linux-port/                          main checkout (integration, primary bu
 
 ../vita-kernel-wt/<name>/                 kernel worktrees (driver/feature work)
 ├── .config                               copied from main
-├── rootfs.cpio.zst                       copied from main
+├── rootfs.cpio.zst                       copied from main (built by 'make rootfs')
 └── (full kernel working tree, shared objects with linux_vita/)
 ```
 
@@ -110,7 +110,7 @@ Create a kernel worktree for feature/driver development:
 ```sh
 make kernel-worktree NAME=mmc-dma
 # Creates ../vita-kernel-wt/mmc-dma/ on branch topic/mmc-dma
-# Copies .config and rootfs.cpio.zst from main linux_vita/
+# Copies .config and rootfs.cpio.zst from main linux_vita/ (build with 'make rootfs')
 # Writes .linux-vita-dir so subsequent builds use this worktree
 ```
 

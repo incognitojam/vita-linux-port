@@ -1,0 +1,53 @@
+{
+    "logo": {
+        "source": "PSVita"
+    },
+    "display": {
+        "pipe": false
+    },
+    "modules": [
+        "title",
+        "separator",
+        {
+            "type": "os",
+            "key": "OS"
+        },
+        {
+            "type": "host",
+            "key": "Host"
+        },
+        {
+            "type": "kernel",
+            "key": "Kernel"
+        },
+        {
+            "type": "uptime",
+            "key": "Uptime"
+        },
+        {
+            "type": "shell",
+            "key": "Shell"
+        },
+        {
+            "type": "cpu",
+            "key": "CPU",
+            "format": "ARM Cortex-A9 ({cores-online}) @ {freq-max}"
+        },
+        {
+            "type": "memory",
+            "key": "Memory"
+        },
+        {
+            "type": "disk",
+            "key": "Disk"
+        },
+        {
+            "type": "processes",
+            "key": "Processes"
+        },
+        {
+            "type": "loadavg",
+            "key": "Load"
+        }
+    ]
+}
