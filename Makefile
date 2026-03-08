@@ -109,7 +109,7 @@ CACHE_REMOTES := \
 	upstream=https://github.com/xerpi/linux_vita.git \
 	techflashYT=https://github.com/techflashYT/linux-custom.git
 
-.PHONY: config savedefconfig build build-zimage build-dtb dtb push push-setup boot deploy help watch serial serial-bridge lsp clean
+.PHONY: config olddefconfig savedefconfig build build-zimage build-dtb dtb push push-setup boot deploy help watch serial serial-bridge lsp clean
 .PHONY: rootfs rootfs-config rootfs-savedefconfig rootfs-menuconfig rootfs-clean
 .PHONY: setup-cache update-cache worktree kernel-worktree kernel-use kernel-bump setup-git-config
 
@@ -131,6 +131,10 @@ $(KCONFIG):
 	$(check-kernel-dir)
 	@echo ".config missing — generating from vita_defconfig"
 	@$(KMAKE) -C $(LOCAL_KERNEL_DIR) vita_defconfig
+
+olddefconfig: ## update .config with defaults for new symbols (no prompt)
+	$(check-kernel-dir)
+	@$(KMAKE) -C $(LOCAL_KERNEL_DIR) olddefconfig
 
 savedefconfig: ## update vita_defconfig from current .config
 	$(check-kernel-dir)
