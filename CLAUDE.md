@@ -6,6 +6,8 @@ See [BUILDING.md](BUILDING.md), [PROGRESS.md](PROGRESS.md), [HARDWARE.md](HARDWA
 
 - `linux_vita/` — kernel (submodule, Linux 6.12 + xerpi's Vita patches)
 - `vita-baremetal-linux-loader/` — loader (submodule)
+- `buildroot/` — buildroot (submodule, pinned to 2025.11.1)
+- `buildroot-vita/` — br2-external tree (Vita rootfs config, overlay, post-build scripts)
 - `refs/` — reference repos (vita-headers, psvcmd56, vita-libbaremetal, xerpi-linux-vita, StorageMgr, etc.)
 
 **Branches:** The dev branch for each submodule may change over time. Check
@@ -32,12 +34,13 @@ see the remote default. Don't assume a hardcoded branch name — verify it.
 - `ux0:/data/tai/kplugin.skprx` — baremetal loader kernel plugin
 - Plugin Loader VPK installed as app
 
-## Buildroot VM
+## Buildroot (rootfs)
 
-- `ssh periscope` — Debian 13 aarch64 (UTM + Rosetta), rootfs builds only
-- Build: `cd ~/buildroot && make -j6` → `output/images/rootfs.cpio.zst`
-- Overlay: `~/buildroot/rootfs-overlay/`
-- Fetch: `scp periscope:~/buildroot/output/images/rootfs.cpio.zst linux_vita/rootfs.cpio.zst`
+- `make rootfs` — build rootfs via buildroot, copies `rootfs.cpio.zst` into `linux_vita/`
+- `make rootfs-menuconfig` — interactive buildroot config
+- `make rootfs-savedefconfig` — save buildroot config changes to `buildroot-vita/configs/vita_defconfig`
+- Overlay: `buildroot-vita/board/vita/overlay/` (committed) + `board/vita/local/` (gitignored, sensitive files)
+- Defconfig: `buildroot-vita/configs/vita_defconfig` (minimal, non-default options only)
 
 ## Workflow
 

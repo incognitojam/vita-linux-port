@@ -339,11 +339,11 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - Build locally with LLVM/Clang (macOS) or Bootlin GCC cross-compiler (Linux)
 - See [BUILDING.md](BUILDING.md) for prerequisites and build instructions
 
-### Buildroot VM (periscope)
-- **periscope** (`ssh periscope`) — Debian 13 aarch64 (UTM + Rosetta) — used for building the rootfs only
-- `~/buildroot` — buildroot 2025.11.1 (built natively, `BR2_TOOLCHAIN_EXTERNAL_CUSTOM`)
-- Rootfs overlay: `~/buildroot/rootfs-overlay/`
-- VitaSDK: `/usr/local/vitasdk` (for building Vita homebrew plugins)
+### Buildroot (rootfs)
+- `buildroot/` — buildroot 2025.11.1 (git submodule)
+- `buildroot-vita/` — br2-external tree (defconfig, overlay, post-build scripts)
+- Build: `make rootfs` → copies `rootfs.cpio.zst` into `linux_vita/`
+- Overlay: `buildroot-vita/board/vita/overlay/` (committed) + `board/vita/local/` (gitignored)
 
 
 ### Vita
@@ -489,7 +489,7 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 ## Key references
 - xerpi's gist: https://gist.github.com/xerpi/ef487ec59a8246cb2823d007f5e8dfcb
 - HENkaku wiki driver status: https://wiki.henkaku.xyz/vita/Linux_Driver_Status
-- Buildroot .config expects rootfs.cpio.zst (recompress from .xz with zstd)
+- Buildroot defconfig: `buildroot-vita/configs/vita_defconfig` (rootfs output: `rootfs.cpio.zst`)
 - psvcmd56 SceIntrmgr.h: SDIF interrupt codes 0xDC-0xDF
 
 ## Kernel config additions (beyond xerpi baseline)
@@ -514,16 +514,28 @@ cpp -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
 - `CONFIG_PWRSEQ_VITA_WLAN=y` — mmc-pwrseq driver for automatic WiFi power-on at boot
 - `CONFIG_CRYPTO_JITTERENTROPY=y` — CPU jitter entropy source (needs high-res clocksource)
 
-## Buildroot rootfs overlay (on periscope: `~/buildroot/rootfs-overlay/`)
+## Buildroot rootfs overlay (`buildroot-vita/board/vita/overlay/`)
 - `etc/fstab` — standard mounts + debugfs + Vita eMMC partitions (ro, noauto)
+- `etc/hostname` — "vita"
 - `etc/init.d/S05vita` — creates `/dev/vita/*` symlinks to eMMC partitions
 - `etc/init.d/S45wifi` — background script: waits for mlan0 (up to 30s), then `ifup mlan0`
-- `etc/network/interfaces` — loopback auto, mlan0 manual (DHCP + wpa_supplicant pre-up)
+- `etc/init.d/S50pipewire` — starts PipeWire + WirePlumber (audio daemon)
+- `etc/network/interfaces` — loopback auto, mlan0 DHCP (wpa_supplicant pre-up)
+- `etc/ssh/sshd_config` — key-only root login, no passwords
+- `etc/alsa/conf.d/` — PipeWire ALSA plugin symlinks
+- `usr/share/wireplumber/wireplumber.conf.d/50-bluez.conf` — Bluetooth audio profiles
+- `root/.config/fastfetch/config.jsonc` — fastfetch display config
+
+### Local overlay (`buildroot-vita/board/vita/local/`, gitignored)
+Second overlay layer for sensitive/per-user files. Same directory structure as the
+target rootfs — files are copied directly. Typical contents:
 - `etc/wpa_supplicant.conf` — WiFi credentials
-- `etc/ssh/ssh_host_*_key` — pre-generated SSH host keys (0600 permissions)
-- `root/.ssh/authorized_keys` — ed25519 public keys for SSH access
-- `lib/firmware/mrvl/sd8787_uapsta.bin` — Marvell SD8787 WiFi firmware (from linux-firmware)
-- `mnt/{os0,vs0,sa0,tm0,vd0,ud0,pd0,ur0}/` — mountpoint directories
+- `etc/ssh/ssh_host_*_key` — pre-generated SSH host keys
+- `root/.ssh/authorized_keys` — SSH public keys for root access
+
+### Post-build (`buildroot-vita/board/vita/post_build.sh`)
+- Downloads `mrvl/sd8787_uapsta.bin` WiFi firmware from linux-firmware on first build
+- Creates `/mnt/{os0,vs0,...,emmc}` mountpoint directories
 
 ## Known issues
 - ~~**CRNG init takes ~140s**~~ — **SOLVED (2026-02-25).** Enabling the ARM Global Timer

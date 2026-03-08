@@ -110,6 +110,7 @@ CACHE_REMOTES := \
 	techflashYT=https://github.com/techflashYT/linux-custom.git
 
 .PHONY: config savedefconfig build build-zimage build-dtb dtb push push-setup boot deploy help watch serial serial-bridge lsp clean
+.PHONY: rootfs rootfs-config rootfs-savedefconfig rootfs-menuconfig rootfs-clean
 .PHONY: setup-cache update-cache worktree kernel-worktree kernel-use kernel-bump setup-git-config
 
 help: ## show this help
@@ -185,6 +186,56 @@ lsp: build ## generate compile_commands.json + .clangd for clangd
 		'    Remove: ["*"]' \
 		> $(LOCAL_KERNEL_DIR)/.clangd
 	@echo "LSP ready: $(LOCAL_KERNEL_DIR)/compile_commands.json + .clangd"
+
+# ------- Buildroot (rootfs) -------
+
+BUILDROOT_DIR     := ./buildroot
+BUILDROOT_EXT     := ./buildroot-vita
+BUILDROOT_OUT     := $(BUILDROOT_DIR)/output
+ROOTFS_CPIO       := $(BUILDROOT_OUT)/images/rootfs.cpio.zst
+ROOTFS_DEST       := $(LOCAL_KERNEL_DIR)/rootfs.cpio.zst
+
+# Buildroot make wrapper — sets external tree and output dir
+BRMAKE = $(MAKE) -C $(BUILDROOT_DIR) BR2_EXTERNAL=$(abspath $(BUILDROOT_EXT)) O=$(abspath $(BUILDROOT_OUT))
+
+define check-buildroot
+	@if [ ! -f "$(BUILDROOT_DIR)/Makefile" ]; then \
+		echo "ERROR: buildroot/ not found. Run: git submodule update --init buildroot"; \
+		exit 1; \
+	fi
+endef
+
+rootfs: ## build rootfs (initramfs) via buildroot
+	$(check-buildroot)
+	$(check-kernel-dir)
+	@if [ ! -f "$(BUILDROOT_OUT)/.config" ]; then \
+		echo "No buildroot .config — running vita_defconfig first..."; \
+		$(BRMAKE) vita_defconfig; \
+	fi
+	$(BRMAKE) -j$(NPROC)
+	@cp "$(ROOTFS_CPIO)" "$(ROOTFS_DEST)"
+	@echo "rootfs.cpio.zst installed to $(ROOTFS_DEST) ($$(du -h "$(ROOTFS_DEST)" | cut -f1))"
+
+rootfs-config: ## apply vita_defconfig for buildroot
+	$(check-buildroot)
+	$(BRMAKE) vita_defconfig
+
+rootfs-menuconfig: ## interactive buildroot config
+	$(check-buildroot)
+	$(BRMAKE) menuconfig
+
+rootfs-savedefconfig: ## save buildroot .config → vita_defconfig
+	$(check-buildroot)
+	$(BRMAKE) savedefconfig BR2_DEFCONFIG=$(abspath $(BUILDROOT_EXT)/configs/vita_defconfig)
+	@echo "vita_defconfig updated ($$(wc -l < $(BUILDROOT_EXT)/configs/vita_defconfig) lines)"
+
+rootfs-clean: ## clean buildroot output
+	@if [ -d "$(BUILDROOT_OUT)" ]; then \
+		$(BRMAKE) clean; \
+		echo "Buildroot output cleaned"; \
+	else \
+		echo "Nothing to clean"; \
+	fi
 
 # ------- Transfer -------
 
@@ -322,7 +373,7 @@ worktree: ## create outer worktree at ../vita-wt/<NAME>
 		if [ -f "linux_vita/rootfs.cpio.zst" ]; then \
 			cp "linux_vita/rootfs.cpio.zst" "$$DEST/linux_vita/rootfs.cpio.zst"; \
 		else \
-			echo "  NOTE: rootfs.cpio.zst not found in linux_vita/ — fetch from periscope if needed"; \
+			echo "  NOTE: rootfs.cpio.zst not found in linux_vita/ — run 'make rootfs' to build it"; \
 		fi; \
 		echo ""; \
 		echo "Integration worktree ready at $$DEST"; \

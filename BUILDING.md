@@ -98,36 +98,64 @@ The Vita must be running VitaOS (not Linux) for FTP to be available.
 
 ## Buildroot (initramfs)
 
-The root filesystem is built on periscope using Buildroot (Linux users can also build it locally with the same Bootlin toolchain):
+The root filesystem is built locally using [Buildroot](https://buildroot.org/), included as a git submodule. A `br2-external` tree (`buildroot-vita/`) holds the Vita-specific configuration, rootfs overlay, and post-build scripts.
+
+### First-time setup
 
 ```bash
-ssh periscope
-cd ~/buildroot && make -j6
-# Output: output/images/rootfs.cpio.zst
-cp output/images/rootfs.cpio.zst ~/linux_vita/
+# Initialize the buildroot submodule (if not already done)
+git submodule update --init buildroot
+
+# Set up local overlay with your credentials (not committed to git)
+mkdir -p buildroot-vita/board/vita/local/etc
+mkdir -p buildroot-vita/board/vita/local/etc/ssh
+mkdir -p buildroot-vita/board/vita/local/root/.ssh
+
+# WiFi config
+cat > buildroot-vita/board/vita/local/etc/wpa_supplicant.conf <<EOF
+ctrl_interface=/var/run/wpa_supplicant
+update_config=1
+
+network={
+    ssid="YourNetworkName"
+    psk="YourPassword"
+}
+EOF
+
+# SSH public key for root login
+cp ~/.ssh/id_ed25519.pub buildroot-vita/board/vita/local/root/.ssh/authorized_keys
+
+# Optionally pre-generate SSH host keys (avoids slow generation on Vita)
+ssh-keygen -t ed25519 -f buildroot-vita/board/vita/local/etc/ssh/ssh_host_ed25519_key -N ""
+ssh-keygen -t ecdsa -f buildroot-vita/board/vita/local/etc/ssh/ssh_host_ecdsa_key -N ""
+ssh-keygen -t rsa -b 4096 -f buildroot-vita/board/vita/local/etc/ssh/ssh_host_rsa_key -N ""
 ```
 
-To fetch it from periscope for local builds:
+### Building the rootfs
+
+> **Note:** Buildroot requires a Linux host. On macOS, use a Linux VM or container for `make rootfs`. The kernel build itself works natively on macOS.
 
 ```bash
-scp periscope:~/buildroot/output/images/rootfs.cpio.zst linux_vita/rootfs.cpio.zst
+make rootfs
 ```
+
+This runs buildroot with the `vita_defconfig`, builds the rootfs, and copies `rootfs.cpio.zst` into `linux_vita/`. The post-build script automatically downloads the WiFi firmware. Your local overlay files (WiFi config, SSH keys) are applied by buildroot's overlay mechanism.
 
 The kernel config embeds this as `CONFIG_INITRAMFS_SOURCE="rootfs.cpio.zst"`. The file must be present in `linux_vita/` at build time for the initramfs to be included in the zImage.
 
-Rootfs overlay (add files to the initramfs): `~/buildroot/rootfs-overlay/` on periscope.
+### Modifying the rootfs
+
+- **Add/change overlay files:** edit `buildroot-vita/board/vita/overlay/`
+- **Add packages:** `make rootfs-menuconfig`, then `make rootfs-savedefconfig`
+- **Rebuild:** `make rootfs` (incremental — only rebuilds changed packages)
+
+### Rootfs overlay
+
+Non-sensitive overlay files live in `buildroot-vita/board/vita/overlay/` (committed). Sensitive files (WiFi credentials, SSH keys) go in `buildroot-vita/board/vita/local/` (gitignored) — see `local/README.md`.
 
 ### WiFi firmware
 
-The Marvell SD8787 WiFi chip requires `sd8787_uapsta.bin` from linux-firmware. Place it in the rootfs overlay:
-
-```bash
-# On periscope:
-mkdir -p ~/buildroot/rootfs-overlay/lib/firmware/mrvl
-cp sd8787_uapsta.bin ~/buildroot/rootfs-overlay/lib/firmware/mrvl/
-```
-
-The firmware is loaded by the mwifiex driver when WiFi is powered on via `wlan_power` sysfs.
+The Marvell SD8787 WiFi chip requires `sd8787_uapsta.bin` from linux-firmware. The post-build script (`board/vita/post_build.sh`) downloads it automatically from `git.kernel.org` on the first build. The firmware is loaded by the mwifiex driver when WiFi powers on at boot.
 
 ## macOS compatibility patches
 

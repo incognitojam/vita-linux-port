@@ -1,0 +1,7 @@
+auto lo
+iface lo inet loopback
+
+# mlan0 brought up by S45wifi (waits for mwifiex async probe)
+iface mlan0 inet dhcp
+    pre-up wpa_supplicant -B -i mlan0 -c /etc/wpa_supplicant.conf
+    post-down killall wpa_supplicant 2>/dev/null
