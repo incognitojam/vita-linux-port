@@ -37,10 +37,13 @@ endif
 
 LOCAL_KERNEL_DIR := $(LINUX_VITA_DIR)
 ZIMAGE           := $(LOCAL_KERNEL_DIR)/arch/arm/boot/zImage
-DTS_PATH         := arch/arm/boot/dts/sony
-DTS_DIR          := $(LOCAL_KERNEL_DIR)/$(DTS_PATH)
+DTS_BASE         := arch/arm/boot/dts
+# Linux 6.12 keeps the Vita sources at the DTS root. Newer kernels use the
+# standard sony/ vendor directory. Prefer the vendor layout when both exist.
+DTS_PATH         := $(if $(wildcard $(LOCAL_KERNEL_DIR)/$(DTS_BASE)/sony/vita.dtsi),$(DTS_BASE)/sony,$(if $(wildcard $(LOCAL_KERNEL_DIR)/$(DTS_BASE)/vita.dtsi),$(DTS_BASE),))
+DTS_DIR          := $(if $(DTS_PATH),$(LOCAL_KERNEL_DIR)/$(DTS_PATH))
 VITA_MODELS      := vita1000 vita2000 pstv
-DTBS             := $(foreach m,$(VITA_MODELS),$(DTS_DIR)/$(m).dtb)
+DTBS             := $(if $(DTS_DIR),$(foreach m,$(VITA_MODELS),$(DTS_DIR)/$(m).dtb))
 
 # Validation marker — targets that need a kernel tree check this
 KERNEL_MARKER := $(LOCAL_KERNEL_DIR)/arch/arm/configs/vita_defconfig
@@ -49,6 +52,14 @@ define check-kernel-dir
 		echo "ERROR: LINUX_VITA_DIR=$(LOCAL_KERNEL_DIR) does not contain a kernel tree."; \
 		echo "  Missing: $(KERNEL_MARKER)"; \
 		echo "  Run 'make kernel-worktree' or 'make kernel-use' to configure."; \
+		exit 1; \
+	fi
+endef
+
+define check-dts-dir
+	@if [ -z "$(DTS_PATH)" ]; then \
+		echo "ERROR: Vita device tree sources not found in $(LOCAL_KERNEL_DIR)."; \
+		echo "  Expected $(DTS_BASE)/vita.dtsi or $(DTS_BASE)/sony/vita.dtsi."; \
 		exit 1; \
 	fi
 endef
@@ -110,7 +121,7 @@ CACHE_REMOTES := \
 	upstream=https://github.com/xerpi/linux_vita.git \
 	techflashYT=https://github.com/techflashYT/linux-custom.git
 
-.PHONY: config olddefconfig savedefconfig build build-zimage build-dtb dtb push push-setup boot deploy help watch serial serial-bridge lsp clean
+.PHONY: config olddefconfig savedefconfig build build-zimage build-dtb dtb verify-dtb test push push-setup boot deploy help watch serial serial-bridge lsp clean
 .PHONY: rootfs rootfs-config rootfs-savedefconfig rootfs-menuconfig rootfs-clean
 .PHONY: setup-cache update-cache worktree kernel-worktree kernel-use kernel-bump setup-git-config
 
@@ -165,13 +176,37 @@ build-zimage:
 
 build-dtb dtb: ## compile all device trees (vita1000, vita2000, pstv)
 	$(check-kernel-dir)
+	$(check-dts-dir)
 	@for model in $(VITA_MODELS); do \
 		echo "  DTB     $$model.dtb"; \
-		(cd $(LOCAL_KERNEL_DIR) && \
-		$(CPP) -nostdinc -I include -I arch/arm/boot/dts -I $(DTS_PATH) -I include/dt-bindings \
-			-undef -x assembler-with-cpp $(DTS_PATH)/$$model.dts | \
-		scripts/dtc/dtc -I dts -O dtb -o $(DTS_PATH)/$$model.dtb -) || exit 1; \
+		(cd $(LOCAL_KERNEL_DIR) && { \
+			stage_dir=$$(mktemp -d "$(DTS_PATH)/.$$model.dtb.XXXXXX") || exit 1; \
+			trap 'rm -rf "$$stage_dir"' 0 1 2 3 15; \
+			$(CPP) -nostdinc -I include -I arch/arm/boot/dts -I $(DTS_PATH) -I include/dt-bindings \
+				-undef -x assembler-with-cpp $(DTS_PATH)/$$model.dts >"$$stage_dir/source.dts" && \
+			scripts/dtc/dtc -I dts -O dtb -o "$$stage_dir/output.dtb" "$$stage_dir/source.dts" && \
+			mv "$$stage_dir/output.dtb" "$(DTS_PATH)/$$model.dtb"; \
+		}) || exit 1; \
 	done
+
+verify-dtb: ## verify all Vita DTBs were built
+	$(check-kernel-dir)
+	$(check-dts-dir)
+	@for model in $(VITA_MODELS); do \
+		test -f "$(DTS_DIR)/$$model.dtb" || { \
+			echo "ERROR: Missing $(DTS_DIR)/$$model.dtb"; \
+			exit 1; \
+		}; \
+		$(LOCAL_KERNEL_DIR)/scripts/dtc/dtc -I dtb -O dts \
+			-o /dev/null "$(DTS_DIR)/$$model.dtb" || { \
+			echo "ERROR: Invalid $(DTS_DIR)/$$model.dtb"; \
+			exit 1; \
+		}; \
+		file "$(DTS_DIR)/$$model.dtb"; \
+	done
+
+test: ## run build-contract regression tests
+	@MAKE_CMD="$(MAKE)" ./tests/test-dtb-build.sh
 
 # ------- LSP / clangd -------
 
@@ -245,6 +280,8 @@ rootfs-clean: ## clean buildroot output
 # ------- Transfer -------
 
 push: ## upload zImage + all DTBs to Vita via FTP
+	$(check-kernel-dir)
+	$(check-dts-dir)
 	curl -s --ftp-create-dirs -T $(ZIMAGE) "ftp://$(VITA_IP):$(FTP_PORT)/ux0:/linux/zImage"
 	@for model in $(VITA_MODELS); do \
 		echo "  PUSH    $$model.dtb"; \

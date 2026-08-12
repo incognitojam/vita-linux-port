@@ -44,6 +44,9 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q bc flex bison libssl-dev libelf-dev
 
+      - name: Test build contract
+        run: make test
+
       - name: Configure kernel
         working-directory: linux_vita
         run: |
@@ -59,20 +62,14 @@ jobs:
           export PATH="${{ github.workspace }}/.toolchains/${{ env.BOOTLIN_DIR }}/bin:$PATH"
           make ARCH=arm CROSS_COMPILE=arm-linux- scripts -j$(nproc)
 
-      - name: Build device tree
-        working-directory: linux_vita
+      - name: Build device trees
         run: |
           export PATH="${{ github.workspace }}/.toolchains/${{ env.BOOTLIN_DIR }}/bin:$PATH"
-          arm-linux-cpp \
-            -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
-            -undef -x assembler-with-cpp arch/arm/boot/dts/vita1000.dts | \
-            scripts/dtc/dtc -I dts -O dtb -o arch/arm/boot/dts/vita1000.dtb -
+          make dtb CROSS_COMPILE=arm-linux-
 
       - name: Verify outputs
-        working-directory: linux_vita
         run: |
-          test -f arch/arm/boot/dts/vita1000.dtb
-          file arch/arm/boot/dts/vita1000.dtb
+          make verify-dtb
           echo "Build successful"
 
   build-macos:
@@ -110,17 +107,12 @@ jobs:
             HOSTCFLAGS="-Iscripts/macos-include -I$(brew --prefix libelf)/include" \
             scripts -j$(sysctl -n hw.ncpu)
 
-      - name: Build device tree
-        working-directory: linux_vita
+      - name: Build device trees
         run: |
           export PATH="$(brew --prefix llvm)/bin:$PATH"
-          clang -E -nostdinc -I include -I arch/arm/boot/dts -I include/dt-bindings \
-            -undef -x assembler-with-cpp arch/arm/boot/dts/vita1000.dts | \
-            scripts/dtc/dtc -I dts -O dtb -o arch/arm/boot/dts/vita1000.dtb -
+          gmake dtb
 
       - name: Verify outputs
-        working-directory: linux_vita
         run: |
-          test -f arch/arm/boot/dts/vita1000.dtb
-          file arch/arm/boot/dts/vita1000.dtb
+          gmake verify-dtb
           echo "Build successful"
